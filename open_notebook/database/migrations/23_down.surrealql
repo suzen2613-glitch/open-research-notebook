@@ -1,0 +1,15 @@
+-- Rollback Migration 23
+
+REMOVE FIELD IF EXISTS canonical_language ON TABLE concept;
+REMOVE FIELD IF EXISTS canonical_language ON TABLE question;
+
+REMOVE FIELD IF EXISTS display_language ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS canonical_language ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS extraction_confidence ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS evidence_snippets.*.embedding_id ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS evidence_snippets.*.section ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS evidence_snippets.*.char_start ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS evidence_snippets.*.char_end ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS evidence_snippets.*.excerpt ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS evidence_snippets.*.reason ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS evidence_snippets ON TABLE source_wiki_card;

@@ -1,0 +1,6 @@
+[Unit]
+Description=Open Notebook Local Development Stack
+Wants=open-notebook-surreal.service open-notebook-api.service open-notebook-worker.service open-notebook-frontend.service open-notebook-cloudflared.service
+
+[Install]
+WantedBy=default.target

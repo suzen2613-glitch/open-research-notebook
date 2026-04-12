@@ -1,0 +1,37 @@
+-- Migration 19: source wiki cards as a first-class derived entity
+
+DEFINE TABLE IF NOT EXISTS source_wiki_card SCHEMAFULL;
+
+DEFINE FIELD IF NOT EXISTS source ON TABLE source_wiki_card TYPE record<source>;
+DEFINE FIELD IF NOT EXISTS notebook_ids ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS source_title ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS title ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS canonical_title ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS slug ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS authors ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS year ON TABLE source_wiki_card TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS venue ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS summary_text ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS topics ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS methods ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS problems ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS contributions ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS limitations ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS concept_ids ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS concept_names ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS question_ids ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS related_sources ON TABLE source_wiki_card TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS relation_edges ON TABLE source_wiki_card TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS obsidian_markdown ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS obsidian_frontmatter ON TABLE source_wiki_card TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS summary_source_insight_id ON TABLE source_wiki_card TYPE option<record<source_insight>>;
+DEFINE FIELD IF NOT EXISTS prompt_snapshot ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS model_id ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS command_id ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS status ON TABLE source_wiki_card TYPE string VALUE $value OR "pending";
+DEFINE FIELD IF NOT EXISTS error_message ON TABLE source_wiki_card TYPE option<string>;
+
+DEFINE FIELD IF NOT EXISTS created ON source_wiki_card DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON source_wiki_card DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_source_wiki_card_source ON TABLE source_wiki_card FIELDS source UNIQUE;

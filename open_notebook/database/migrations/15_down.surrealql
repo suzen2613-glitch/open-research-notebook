@@ -1,0 +1,4 @@
+-- Roll back academic summary default transformation changes
+
+DELETE transformation WHERE name = "Academic Paper Summary";
+UPDATE transformation SET apply_default = true WHERE name = "Dense Summary";

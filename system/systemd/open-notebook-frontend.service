@@ -1,0 +1,15 @@
+[Unit]
+Description=Open Notebook Frontend
+PartOf=open-notebook.target
+After=open-notebook-api.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env bash __PROJECT_DIR__/system/open-notebook-systemd-run.sh frontend
+Restart=always
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=20
+
+[Install]
+WantedBy=open-notebook.target

@@ -1,0 +1,3 @@
+-- Migration 21 down: remove wiki card question_names field
+
+REMOVE FIELD IF EXISTS question_names ON TABLE source_wiki_card;

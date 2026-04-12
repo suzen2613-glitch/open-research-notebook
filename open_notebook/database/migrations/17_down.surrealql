@@ -1,0 +1,5 @@
+-- Remove prompt provenance metadata from source insights
+
+REMOVE FIELD IF EXISTS transformation_id ON TABLE source_insight;
+REMOVE FIELD IF EXISTS prompt_title ON TABLE source_insight;
+REMOVE FIELD IF EXISTS prompt_snapshot ON TABLE source_insight;

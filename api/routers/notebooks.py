@@ -1,0 +1,412 @@
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException, Query
+from loguru import logger
+
+from api.models import (
+    DuplicateCleanupResponse,
+    DuplicateSourceEntryResponse,
+    DuplicateSourceGroupResponse,
+    NotebookCreate,
+    NotebookDeletePreview,
+    NotebookDeleteResponse,
+    NotebookResponse,
+    NotebookUpdate,
+)
+from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.domain.notebook import Notebook, Source
+from open_notebook.exceptions import InvalidInputError
+from open_notebook.services.source_dedupe import (
+    analyze_notebook_duplicates,
+    cleanup_notebook_duplicates,
+)
+
+router = APIRouter()
+
+
+@router.get("/notebooks", response_model=List[NotebookResponse])
+async def get_notebooks(
+    archived: Optional[bool] = Query(None, description="Filter by archived status"),
+    order_by: str = Query("updated desc", description="Order by field and direction"),
+):
+    """Get all notebooks with optional filtering and ordering."""
+    try:
+        # Build the query with counts
+        query = f"""
+            SELECT *,
+            count(<-reference.in) as source_count,
+            count(<-artifact.in) as note_count
+            FROM notebook
+            ORDER BY {order_by}
+        """
+
+        result = await repo_query(query)
+
+        # Filter by archived status if specified
+        if archived is not None:
+            result = [nb for nb in result if nb.get("archived") == archived]
+
+        return [
+            NotebookResponse(
+                id=str(nb.get("id", "")),
+                name=nb.get("name", ""),
+                description=nb.get("description", ""),
+                archived=nb.get("archived", False),
+                created=str(nb.get("created", "")),
+                updated=str(nb.get("updated", "")),
+                source_count=nb.get("source_count", 0),
+                note_count=nb.get("note_count", 0),
+            )
+            for nb in result
+        ]
+    except Exception as e:
+        logger.error(f"Error fetching notebooks: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching notebooks: {str(e)}"
+        )
+
+
+@router.post("/notebooks", response_model=NotebookResponse)
+async def create_notebook(notebook: NotebookCreate):
+    """Create a new notebook."""
+    try:
+        new_notebook = Notebook(
+            name=notebook.name,
+            description=notebook.description,
+        )
+        await new_notebook.save()
+
+        return NotebookResponse(
+            id=new_notebook.id or "",
+            name=new_notebook.name,
+            description=new_notebook.description,
+            archived=new_notebook.archived or False,
+            created=str(new_notebook.created),
+            updated=str(new_notebook.updated),
+            source_count=0,  # New notebook has no sources
+            note_count=0,  # New notebook has no notes
+        )
+    except InvalidInputError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating notebook: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error creating notebook: {str(e)}"
+        )
+
+
+@router.get(
+    "/notebooks/{notebook_id}/delete-preview", response_model=NotebookDeletePreview
+)
+async def get_notebook_delete_preview(notebook_id: str):
+    """Get a preview of what will be deleted when this notebook is deleted."""
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        preview = await notebook.get_delete_preview()
+
+        return NotebookDeletePreview(
+            notebook_id=str(notebook.id),
+            notebook_name=notebook.name,
+            note_count=preview["note_count"],
+            exclusive_source_count=preview["exclusive_source_count"],
+            shared_source_count=preview["shared_source_count"],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting delete preview for notebook {notebook_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching notebook deletion preview: {str(e)}",
+        )
+
+
+@router.get("/notebooks/{notebook_id}", response_model=NotebookResponse)
+async def get_notebook(notebook_id: str):
+    """Get a specific notebook by ID."""
+    try:
+        # Query with counts for single notebook
+        query = """
+            SELECT *,
+            count(<-reference.in) as source_count,
+            count(<-artifact.in) as note_count
+            FROM $notebook_id
+        """
+        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        nb = result[0]
+        return NotebookResponse(
+            id=str(nb.get("id", "")),
+            name=nb.get("name", ""),
+            description=nb.get("description", ""),
+            archived=nb.get("archived", False),
+            created=str(nb.get("created", "")),
+            updated=str(nb.get("updated", "")),
+            source_count=nb.get("source_count", 0),
+            note_count=nb.get("note_count", 0),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching notebook {notebook_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching notebook: {str(e)}"
+        )
+
+
+@router.put("/notebooks/{notebook_id}", response_model=NotebookResponse)
+async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
+    """Update a notebook."""
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Update only provided fields
+        if notebook_update.name is not None:
+            notebook.name = notebook_update.name
+        if notebook_update.description is not None:
+            notebook.description = notebook_update.description
+        if notebook_update.archived is not None:
+            notebook.archived = notebook_update.archived
+
+        await notebook.save()
+
+        # Query with counts after update
+        query = """
+            SELECT *,
+            count(<-reference.in) as source_count,
+            count(<-artifact.in) as note_count
+            FROM $notebook_id
+        """
+        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
+
+        if result:
+            nb = result[0]
+            return NotebookResponse(
+                id=str(nb.get("id", "")),
+                name=nb.get("name", ""),
+                description=nb.get("description", ""),
+                archived=nb.get("archived", False),
+                created=str(nb.get("created", "")),
+                updated=str(nb.get("updated", "")),
+                source_count=nb.get("source_count", 0),
+                note_count=nb.get("note_count", 0),
+            )
+
+        # Fallback if query fails
+        return NotebookResponse(
+            id=notebook.id or "",
+            name=notebook.name,
+            description=notebook.description,
+            archived=notebook.archived or False,
+            created=str(notebook.created),
+            updated=str(notebook.updated),
+            source_count=0,
+            note_count=0,
+        )
+    except HTTPException:
+        raise
+    except InvalidInputError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error updating notebook {notebook_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error updating notebook: {str(e)}"
+        )
+
+
+@router.post("/notebooks/{notebook_id}/sources/{source_id}")
+async def add_source_to_notebook(notebook_id: str, source_id: str):
+    """Add an existing source to a notebook (create the reference)."""
+    try:
+        # Check if notebook exists
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Check if source exists
+        source = await Source.get(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Source not found")
+
+        # Check if reference already exists (idempotency)
+        existing_ref = await repo_query(
+            "SELECT * FROM reference WHERE out = $source_id AND in = $notebook_id",
+            {
+                "notebook_id": ensure_record_id(notebook_id),
+                "source_id": ensure_record_id(source_id),
+            },
+        )
+
+        # If reference doesn't exist, create it
+        if not existing_ref:
+            await repo_query(
+                "RELATE $source_id->reference->$notebook_id",
+                {
+                    "notebook_id": ensure_record_id(notebook_id),
+                    "source_id": ensure_record_id(source_id),
+                },
+            )
+
+        return {"message": "Source linked to notebook successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error linking source {source_id} to notebook {notebook_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error linking source to notebook: {str(e)}"
+        )
+
+
+@router.delete("/notebooks/{notebook_id}/sources/{source_id}")
+async def remove_source_from_notebook(notebook_id: str, source_id: str):
+    """Remove a source from a notebook (delete the reference)."""
+    try:
+        # Check if notebook exists
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Delete the reference record linking source to notebook
+        await repo_query(
+            "DELETE FROM reference WHERE out = $source_id AND in = $notebook_id",
+            {
+                "notebook_id": ensure_record_id(notebook_id),
+                "source_id": ensure_record_id(source_id),
+            },
+        )
+
+        return {"message": "Source removed from notebook successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error removing source {source_id} from notebook {notebook_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error removing source from notebook: {str(e)}"
+        )
+
+
+@router.get(
+    "/notebooks/{notebook_id}/duplicate-sources",
+    response_model=List[DuplicateSourceGroupResponse],
+)
+async def get_notebook_duplicate_sources(notebook_id: str):
+    """List duplicate source groups within a notebook based on normalized paper title."""
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        duplicates = await analyze_notebook_duplicates(notebook_id)
+        return [
+            DuplicateSourceGroupResponse(
+                normalized_title=group["normalized_title"],
+                keep_source_id=group["keep_source_id"],
+                keep_title=group.get("keep_title"),
+                duplicate_count=group["duplicate_count"],
+                duplicates=[
+                    DuplicateSourceEntryResponse(**entry)
+                    for entry in group.get("duplicates", [])
+                ],
+            )
+            for group in duplicates
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error scanning duplicate sources for notebook {notebook_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error scanning duplicate sources: {str(e)}"
+        )
+
+
+@router.post(
+    "/notebooks/{notebook_id}/duplicate-sources/cleanup",
+    response_model=DuplicateCleanupResponse,
+)
+async def cleanup_duplicate_sources(notebook_id: str):
+    """Remove duplicate sources from a notebook, deleting exclusive duplicates and unlinking shared ones."""
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        result = await cleanup_notebook_duplicates(notebook_id)
+        return DuplicateCleanupResponse(
+            duplicate_groups=[
+                DuplicateSourceGroupResponse(
+                    normalized_title=group["normalized_title"],
+                    keep_source_id=group["keep_source_id"],
+                    keep_title=group.get("keep_title"),
+                    duplicate_count=group["duplicate_count"],
+                    duplicates=[
+                        DuplicateSourceEntryResponse(**entry)
+                        for entry in group.get("duplicates", [])
+                    ],
+                )
+                for group in result["groups"]
+            ],
+            removed_source_ids=result["removed_source_ids"],
+            unlinked_source_ids=result["unlinked_source_ids"],
+            removed_count=result["removed_count"],
+            unlinked_count=result["unlinked_count"],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error cleaning duplicate sources for notebook {notebook_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error cleaning duplicate sources: {str(e)}"
+        )
+
+
+@router.delete("/notebooks/{notebook_id}", response_model=NotebookDeleteResponse)
+async def delete_notebook(
+    notebook_id: str,
+    delete_exclusive_sources: bool = Query(
+        False,
+        description="Whether to delete sources that belong only to this notebook",
+    ),
+):
+    """
+    Delete a notebook with cascade deletion.
+
+    Always deletes all notes associated with the notebook.
+    If delete_exclusive_sources is True, also deletes sources that belong only
+    to this notebook (not linked to any other notebooks).
+    """
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        result = await notebook.delete(delete_exclusive_sources=delete_exclusive_sources)
+
+        return NotebookDeleteResponse(
+            message="Notebook deleted successfully",
+            deleted_notes=result["deleted_notes"],
+            deleted_sources=result["deleted_sources"],
+            unlinked_sources=result["unlinked_sources"],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting notebook {notebook_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting notebook: {str(e)}"
+        )

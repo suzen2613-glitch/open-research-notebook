@@ -1,0 +1,17 @@
+[Unit]
+Description=Open Notebook Cloudflare Tunnel
+PartOf=open-notebook.target
+After=network-online.target open-notebook-frontend.service
+Wants=network-online.target
+Requires=open-notebook-frontend.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env bash __PROJECT_DIR__/system/open-notebook-systemd-run.sh cloudflared
+Restart=always
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=20
+
+[Install]
+WantedBy=open-notebook.target

@@ -1,0 +1,14 @@
+-- Migration 20: preserve structured wiki card relation objects in schemafull table
+
+DEFINE FIELD OVERWRITE related_sources ON TABLE source_wiki_card TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS related_sources.*.source_id ON TABLE source_wiki_card TYPE string;
+DEFINE FIELD IF NOT EXISTS related_sources.*.source_title ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS related_sources.*.relation_type ON TABLE source_wiki_card TYPE string;
+DEFINE FIELD IF NOT EXISTS related_sources.*.reason ON TABLE source_wiki_card TYPE string;
+
+DEFINE FIELD OVERWRITE relation_edges ON TABLE source_wiki_card TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS relation_edges.*.source_id ON TABLE source_wiki_card TYPE string;
+DEFINE FIELD IF NOT EXISTS relation_edges.*.relation_type ON TABLE source_wiki_card TYPE string;
+DEFINE FIELD IF NOT EXISTS relation_edges.*.reason ON TABLE source_wiki_card TYPE string;
+
+DEFINE FIELD OVERWRITE obsidian_frontmatter ON TABLE source_wiki_card FLEXIBLE TYPE option<object>;

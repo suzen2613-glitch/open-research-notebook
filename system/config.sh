@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${OPEN_NOTEBOOK_PROJECT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+ENV_FILE="${OPEN_NOTEBOOK_ENV_FILE:-$PROJECT_DIR/.env}"
+
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+FRONTEND_DIR="$PROJECT_DIR/frontend"
+API_DIR="$PROJECT_DIR"
+CONDA_PYTHON="${OPEN_NOTEBOOK_CONDA_PYTHON:-python3}"
+WORKER_BIN="${OPEN_NOTEBOOK_WORKER_BIN:-surreal-commands-worker}"
+SURREAL_BIN="${OPEN_NOTEBOOK_SURREAL_BIN:-surreal}"
+DB_PATH="${OPEN_NOTEBOOK_DB_PATH:-$PROJECT_DIR/surreal_data}"
+DB_HOST="${OPEN_NOTEBOOK_DB_HOST:-127.0.0.1}"
+DB_PORT="${OPEN_NOTEBOOK_DB_PORT:-8000}"
+DB_USER="${OPEN_NOTEBOOK_DB_USER:-root}"
+DB_PASS="${OPEN_NOTEBOOK_DB_PASS:-${SURREAL_PASSWORD:-root}}"
+API_HOST="${OPEN_NOTEBOOK_API_HOST:-0.0.0.0}"
+API_PORT="${OPEN_NOTEBOOK_API_PORT:-5055}"
+FRONTEND_HOST="${OPEN_NOTEBOOK_FRONTEND_HOST:-0.0.0.0}"
+FRONTEND_PORT="${OPEN_NOTEBOOK_FRONTEND_PORT:-3000}"
+IMAGE_DIR="${OPEN_NOTEBOOK_IMAGE_DIR_OVERRIDE:-$PROJECT_DIR/images}"
+LOG_DIR="${OPEN_NOTEBOOK_LOG_DIR:-/tmp/open-notebook}"
+PID_DIR="$LOG_DIR/pids"
+SYSTEMD_TEMPLATE_DIR="$SCRIPT_DIR/systemd"
+SYSTEMD_USER_DIR="${OPEN_NOTEBOOK_SYSTEMD_USER_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user}"
+
+if command -v npm >/dev/null 2>&1; then
+  DEFAULT_NPM_BIN="$(command -v npm)"
+else
+  DEFAULT_NPM_BIN="npm"
+fi
+NPM_BIN="${OPEN_NOTEBOOK_NPM_BIN:-$DEFAULT_NPM_BIN}"
+
+if command -v node >/dev/null 2>&1; then
+  DEFAULT_NODE_BIN="$(readlink -f "$(command -v node)")"
+else
+  DEFAULT_NODE_BIN="node"
+fi
+NODE_BIN="${OPEN_NOTEBOOK_NODE_BIN:-$DEFAULT_NODE_BIN}"
+if command -v cloudflared >/dev/null 2>&1; then
+  DEFAULT_CLOUDFLARED_BIN="$(command -v cloudflared)"
+elif [[ -x "$HOME/.local/bin/cloudflared" ]]; then
+  DEFAULT_CLOUDFLARED_BIN="$HOME/.local/bin/cloudflared"
+else
+  DEFAULT_CLOUDFLARED_BIN="/usr/local/bin/cloudflared"
+fi
+CLOUDFLARED_BIN="${OPEN_NOTEBOOK_CLOUDFLARED_BIN:-$DEFAULT_CLOUDFLARED_BIN}"
+CLOUDFLARED_TUNNEL="${OPEN_NOTEBOOK_CLOUDFLARED_TUNNEL:-open-notebook}"
+START_CLOUDFLARED="${OPEN_NOTEBOOK_START_CLOUDFLARED:-1}"
+PUBLIC_URL="${OPEN_NOTEBOOK_PUBLIC_URL:-https://notebook.example.com}"
+
+mkdir -p "$LOG_DIR" "$PID_DIR"
+
+export SURREAL_URL="ws://$DB_HOST:$DB_PORT/rpc"
+export SURREAL_NAMESPACE="open_notebook"
+export SURREAL_DATABASE="open_notebook"
+export SURREAL_USER="$DB_USER"
+export SURREAL_PASSWORD="$DB_PASS"
+export OPEN_NOTEBOOK_IMAGE_DIR="$IMAGE_DIR"
+export OPEN_NOTEBOOK_IMAGE_SERVER_URL="/api/images"
+export PROJECT_DIR FRONTEND_DIR API_DIR CONDA_PYTHON WORKER_BIN SURREAL_BIN
+export DB_PATH DB_HOST DB_PORT DB_USER DB_PASS API_HOST API_PORT FRONTEND_HOST FRONTEND_PORT
+export LOG_DIR PID_DIR SYSTEMD_TEMPLATE_DIR SYSTEMD_USER_DIR NPM_BIN NODE_BIN ENV_FILE
+export CLOUDFLARED_BIN CLOUDFLARED_TUNNEL START_CLOUDFLARED PUBLIC_URL
+
+pidfile() { echo "$PID_DIR/$1.pid"; }
+
+systemd_unit_installed() {
+  local unit="$1"
+  [[ -f "$SYSTEMD_USER_DIR/$unit" ]]
+}

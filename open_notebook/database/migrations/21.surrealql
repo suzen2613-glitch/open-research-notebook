@@ -1,0 +1,3 @@
+-- Migration 21: add wiki card question_names for stable display/export
+
+DEFINE FIELD IF NOT EXISTS question_names ON TABLE source_wiki_card TYPE array<string>;
