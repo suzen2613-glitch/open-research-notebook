@@ -7,15 +7,36 @@ import { itIT } from './it-IT';
 import { frFR } from './fr-FR';
 import { ruRU } from './ru-RU';
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const mergeWithEnglish = <T extends Record<string, unknown>>(
+  base: Record<string, unknown>,
+  override: T,
+): T => {
+  const merged: Record<string, unknown> = { ...base };
+
+  for (const [key, value] of Object.entries(override)) {
+    const baseValue = merged[key];
+    if (isPlainObject(baseValue) && isPlainObject(value)) {
+      merged[key] = mergeWithEnglish(baseValue, value);
+      continue;
+    }
+    merged[key] = value;
+  }
+
+  return merged as T;
+};
+
 export const resources = {
   'zh-CN': { translation: zhCN },
   'en-US': { translation: enUS },
-  'zh-TW': { translation: zhTW },
-  'pt-BR': { translation: ptBR },
-  'ja-JP': { translation: jaJP },
-  'it-IT': { translation: itIT },
-  'fr-FR': { translation: frFR },
-  'ru-RU': { translation: ruRU },
+  'zh-TW': { translation: mergeWithEnglish(enUS, zhTW) },
+  'pt-BR': { translation: mergeWithEnglish(enUS, ptBR) },
+  'ja-JP': { translation: mergeWithEnglish(enUS, jaJP) },
+  'it-IT': { translation: mergeWithEnglish(enUS, itIT) },
+  'fr-FR': { translation: mergeWithEnglish(enUS, frFR) },
+  'ru-RU': { translation: mergeWithEnglish(enUS, ruRU) },
 } as const;
 
 export type TranslationKeys = typeof enUS;
