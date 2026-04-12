@@ -70,9 +70,9 @@ def test_normalize_wiki_card_payload_filters_placeholders_and_merges_aliases():
     assert normalized["recommended_entry_points"] == [
         "concept:llm",
         "concept:tool-use",
+        "domain:llm",
         "domain:agents",
         "domain:evaluation",
-        "domain:llm",
     ]
     assert normalized["moc_groups"] == [
         "LLM - Reviews",
@@ -123,18 +123,24 @@ def test_serialize_source_wiki_card_regenerates_frontmatter_and_question_names()
         )
     )
 
-    assert serialized["concept_ids"] == ["concept:llm"]
-    assert serialized["concept_names"] == ["LLM"]
+    assert serialized["concept_ids"] == [
+        "concept:llm",
+        "concept:function-calling",
+    ]
+    assert serialized["concept_names"] == [
+        "LLM",
+        "Function Calling",
+    ]
     assert serialized["short_title"] == "Tool Use for LLMs"
     assert serialized["paper_type"] == "method"
     assert serialized["domains"] == ["agents"]
-    assert serialized["core_concept_ids"] == ["concept:llm"]
+    assert serialized["core_concept_ids"] == ["concept:llm", "concept:function-calling"]
     assert serialized["is_key_paper"] is True
     assert serialized["question_ids"] == ["question:tool-selection-errors"]
     assert serialized["question_names"] == ["Tool selection errors"]
     assert serialized["obsidian_frontmatter"]["wiki_card_id"] == "source_wiki_card:test"
     assert serialized["obsidian_frontmatter"]["paper_type"] == "method"
-    assert serialized["obsidian_frontmatter"]["domains"] == ["wave_propagation"]
+    assert serialized["obsidian_frontmatter"]["domains"] == ["agents"]
     assert serialized["obsidian_frontmatter"]["question_names"] == [
         "Tool selection errors"
     ]
@@ -354,4 +360,4 @@ def test_enrich_wiki_card_quality_fields_adds_language_and_evidence():
     assert enriched["canonical_language"] == "en"
     assert enriched["extraction_confidence"] is not None
     assert enriched["evidence_snippets"][0]["embedding_id"] == "source_embedding:test-1"
-    assert "LLM" in enriched["evidence_snippets"][0]["reason"]
+    assert "Large Language Model Paper" in enriched["evidence_snippets"][0]["reason"]
