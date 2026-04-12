@@ -11,17 +11,17 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/lfnovo/open-notebook">
+  <a href="https://github.com/suzen2613-glitch/open-notebook-ai-workspace">
     <img src="docs/assets/hero.svg" alt="Logo">
   </a>
 
-  <h3 align="center">Open Notebook</h3>
+  <h3 align="center">Open Notebook AI Workspace</h3>
 
   <p align="center">
-    An open source, privacy-focused alternative to Google's Notebook LM!
-    <br /><strong>Join our <a href="https://discord.gg/37XJPXfz2w">Discord server</a> for help, to share workflow ideas, and suggest features!</strong>
+    A research-focused derivative of Open Notebook for Zotero-driven paper ingestion,
+    hybrid PDF conversion, structured summaries, and wiki-style knowledge cards.
     <br />
-    <a href="https://www.open-notebook.ai"><strong>Checkout our website »</strong></a>
+    Built for turning paper collections into an LLM-ready research knowledge base.
     <br />
     <br />
     <a href="docs/0-START-HERE/index.md">📚 Get Started</a>
@@ -50,24 +50,59 @@
   <a href="https://zdoc.app/zh/lfnovo/open-notebook">中文</a>
 </div>
 
-## A private, multi-model, 100% local, full-featured alternative to Notebook LM
+## A research workspace built on Open Notebook
 
 > This repository is a customized derivative of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook), published under the original MIT license with additional workflow and UI changes.
 
 ![New Notebook](docs/assets/asset_list.png)
 
-In a world dominated by Artificial Intelligence, having the ability to think 🧠 and acquire new knowledge 💡, is a skill that should not be a privilege for a few, nor restricted to a single provider.
+This fork keeps the self-hosted and multi-model foundation of Open Notebook, but shifts the product toward an academic research workflow:
 
-**Open Notebook empowers you to:**
-- 🔒 **Control your data** - Keep your research private and secure
-- 🤖 **Choose your AI models** - Support for 16+ providers including OpenAI, Anthropic, Ollama, LM Studio, and more
-- 📚 **Organize multi-modal content** - PDFs, videos, audio, web pages, and more
-- 🎙️ **Generate professional podcasts** - Advanced multi-speaker podcast generation
-- 🔍 **Search intelligently** - Full-text and vector search across all your content
-- 💬 **Chat with context** - AI conversations powered by your research
-- 🌐 **Multi-language UI** - English, Portuguese, Chinese (Simplified & Traditional), Japanese, and Russian support
+- ingest papers from Zotero
+- convert PDFs with local or cloud-backed pipelines
+- generate paper summaries and structured wiki cards
+- maintain a notebook layout that is easier to use as an LLM-ready knowledge base
+- export cleaner research artifacts into downstream tools such as Obsidian
 
-Learn more about our project at [https://www.open-notebook.ai](https://www.open-notebook.ai)
+### At a glance
+
+- `Zotero -> Source -> Summary -> Wiki Card -> Notes` as a primary workflow
+- local PDF conversion plus cloud-backed conversion with practical fallback
+- four-column notebook layout for reading, extracting, curating, and writing
+- structured metadata designed for MOC, Dataview, retrieval, and downstream LLM use
+- duplicate-aware paper management based on real paper titles instead of only filenames
+
+### Research workflow
+
+1. Import a paper collection from Zotero or upload PDFs directly.
+2. Convert PDFs with local engines or API-backed conversion.
+3. Generate a canonical `summary` for each paper.
+4. Generate a canonical `wiki card` with concepts, questions, domains, relations, and Obsidian-ready metadata.
+5. Curate notes and reuse the resulting knowledge layer in later LLM workflows.
+
+### What this fork adds
+
+- **Zotero-first academic ingestion**
+  Import papers from Zotero collections directly into notebook workflows instead of treating PDFs as isolated uploads.
+- **Hybrid PDF conversion**
+  Support local conversion and cloud-backed conversion paths, with practical fallback behavior for academic PDFs.
+- **Four-column research notebook layout**
+  `Sources`, `Summary`, `Wiki`, and `Notes` are separated so reading, extraction, and knowledge curation do not collapse into a single feed.
+- **Structured knowledge layer**
+  `Summary` and `Wiki Card` entities are derived from each source and designed for retrieval, comparison, and downstream LLM usage.
+- **Research-friendly metadata**
+  Wiki cards carry paper type, domains, concepts, problems, relations, MOC groupings, and Obsidian-ready metadata.
+- **Duplicate-aware paper management**
+  Duplicate detection and cleanup are designed around real paper titles rather than only filenames.
+
+### Why this matters
+
+If upstream Open Notebook is a flexible AI notebook, this fork is trying to become a more opinionated academic reading and knowledge-workspace:
+
+- better for paper libraries than generic source collections
+- better for turning papers into reusable knowledge objects
+- better for using notebook contents as context for later LLM workflows
+- better for exporting structured research notes instead of only raw source text
 
 ---
 
@@ -92,6 +127,41 @@ Learn more about our project at [https://www.open-notebook.ai](https://www.open-
 - 🔧 **Unlimited Customization**: Modify, extend, and integrate as needed
 - 🌐 **No Vendor Lock-in**: Switch providers, deploy anywhere, own your data
 
+## 🔬 What Is Different In This Fork
+
+| Area | Upstream Open Notebook | This fork |
+|------|------------------------|-----------|
+| Paper ingestion | General source ingestion | Zotero-oriented paper ingestion workflow |
+| PDF conversion | Local-first conversion stack | Local + API-backed conversion strategy with fallback |
+| Notebook structure | Source, notes, chat-centric | Four-column research layout: source, summary, wiki, notes |
+| Derived artifacts | Insights and notes | Canonical `summary` and `wiki card` layers per paper |
+| Knowledge modeling | Mostly document and insight level | Concepts, questions, relations, MOC-ready metadata |
+| Downstream use | General notebook/chat usage | Better suited for LLM knowledge bases and Obsidian export |
+
+## ✨ Key Features In This Fork
+
+- **Zotero import workflow**
+  Pull papers from Zotero collections directly into notebook pipelines.
+- **Hybrid PDF conversion**
+  Use local PDF conversion or API-backed conversion, then keep normalized assets inside the workspace.
+- **Canonical paper summaries**
+  Generate one stable `summary` per source instead of mixing summaries into generic notes.
+- **Wiki cards for knowledge modeling**
+  Generate one canonical `wiki card` per paper with concepts, questions, domains, paper type, relations, and MOC-ready metadata.
+- **Four-column notebook UX**
+  Work across `Sources`, `Summary`, `Wiki`, and `Notes` instead of collapsing paper reading into a single list.
+- **Duplicate-aware source management**
+  Detect and clean duplicate papers using extracted paper titles rather than unreliable filenames.
+
+## 🎯 Best Fit
+
+This project is especially suited for:
+
+- researchers reading large paper collections
+- Zotero users who want a self-hosted AI reading workspace
+- users building LLM-ready research corpora
+- people who want a bridge between raw papers, structured summaries, and wiki-like knowledge cards
+
 ### Built With
 
 [![Python][Python]][Python-url] [![Next.js][Next.js]][Next-url] [![React][React]][React-url] [![SurrealDB][SurrealDB]][SurrealDB-url] [![LangChain][LangChain]][LangChain-url]
@@ -106,7 +176,7 @@ Learn more about our project at [https://www.open-notebook.ai](https://www.open-
 
 **Option A:** Download directly
 ```bash
-curl -o docker-compose.yml https://raw.githubusercontent.com/lfnovo/open-notebook/main/docker-compose.yml
+curl -o docker-compose.yml https://raw.githubusercontent.com/suzen2613-glitch/open-notebook-ai-workspace/main/docker-compose.yml
 ```
 
 **Option B:** Create the file manually
@@ -125,7 +195,7 @@ services:
     restart: always
 
   open_notebook:
-    image: lfnovo/open_notebook:v1-latest
+    image: ghcr.io/suzen2613-glitch/open-notebook-ai-workspace:v1-dev
     ports:
       - "8502:8502"
       - "5055:5055"
@@ -170,6 +240,8 @@ Done! You're ready to create your first notebook.
 > [OpenAI](https://platform.openai.com/api-keys) · [Anthropic](https://console.anthropic.com/) · [Google](https://aistudio.google.com/) · [Groq](https://console.groq.com/) (free tier)
 
 > **Want free local AI?** See [examples/docker-compose-ollama.yml](examples/) for Ollama setup
+
+> **Want the exact latest code in this fork?** Use the source installation guide or publish your own release image. The quick-start compose file tracks the public GHCR image for this repository.
 
 ---
 
