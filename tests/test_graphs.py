@@ -233,6 +233,11 @@ class TestTransformationGraph:
         monkeypatch.setattr(
             transformation_module, "clean_thinking_content", lambda content: content
         )
+        monkeypatch.setattr(
+            Source,
+            "get_embeddings",
+            AsyncMock(return_value=[]),
+        )
 
         source = Source(id="source:test", title="Test Source", topics=[])
         captured: dict[str, object] = {}
