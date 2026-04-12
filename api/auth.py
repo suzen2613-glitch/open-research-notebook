@@ -102,6 +102,11 @@ def has_valid_auth_cookie(request: Request, password: str) -> bool:
     return decode_auth_session(auth_cookie, password) is not None
 
 
+def has_auth_cookie(request: Request) -> bool:
+    auth_cookie = request.cookies.get(get_auth_cookie_name())
+    return bool(auth_cookie)
+
+
 def _parse_bearer_authorization(auth_header: str) -> str:
     scheme, credentials = auth_header.split(" ", 1)
     if scheme.lower() != "bearer":
@@ -160,6 +165,7 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
 
         credentials, parse_error = get_request_password(request)
         cookie_authenticated = has_valid_auth_cookie(request, self.password)
+        cookie_present = has_auth_cookie(request)
 
         if parse_error and not cookie_authenticated:
             return JSONResponse(
@@ -170,7 +176,7 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
 
         bearer_authenticated = credentials == self.password if credentials else False
 
-        if not credentials and not cookie_authenticated:
+        if not credentials and not cookie_authenticated and not cookie_present:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Missing authorization header or auth cookie"},
