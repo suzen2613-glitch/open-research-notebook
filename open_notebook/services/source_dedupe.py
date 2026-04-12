@@ -27,7 +27,7 @@ _TITLE_WORD_RE = re.compile(r"[A-Za-z0-9]")
 _FILE_EXTENSION_RE = re.compile(r"\.(md|markdown|pdf|txt|html?)$", re.IGNORECASE)
 _TRAILING_COPY_RE = re.compile(r"\s*\((\d+)\)\s*$")
 _EXPORT_PREFIX_RE = re.compile(
-    r"^[^-]{1,80}\s*-\s*\d{4}\s*-\s*[^-]{1,120}\s*-\s*(.+)$",
+    r"^[^-]{1,120}\s*-\s*\d{4}\s*-\s*(?:[^-]{1,120}\s*-\s*)?(.+)$",
     re.IGNORECASE,
 )
 _NON_TITLE_PREFIX_RE = re.compile(
@@ -145,6 +145,8 @@ def _score_title_candidate(candidate: str) -> int:
         score += 2
     if "-" in candidate:
         score += 1
+    if _EXPORT_PREFIX_RE.match(candidate):
+        score -= 12
     if _NON_TITLE_PREFIX_RE.match(candidate):
         score -= 10
     if len(words) <= 6 and any(keyword in normalized for keyword in _VENUE_HEADER_KEYWORDS):
@@ -177,7 +179,15 @@ def extract_paper_title_from_markdown(markdown_text: str | None) -> str | None:
         if _is_probable_title_line(line):
             plain_candidates.append(line)
 
-    candidates = heading_candidates if heading_candidates else plain_candidates
+    if heading_candidates:
+        non_export_headings = [
+            candidate
+            for candidate in heading_candidates
+            if not _EXPORT_PREFIX_RE.match(candidate)
+        ]
+        candidates = non_export_headings or heading_candidates
+    else:
+        candidates = plain_candidates
     ranked_candidates = sorted(
         enumerate(candidates),
         key=lambda item: (_score_title_candidate(item[1]), -item[0]),
