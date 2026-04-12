@@ -23,6 +23,9 @@ class TestNoteCreation:
         mock_note.title = "Test Note"
         mock_note.content = "Some content"
         mock_note.note_type = "human"
+        mock_note.board_column = "inbox"
+        mock_note.source_id = None
+        mock_note.source_insight_id = None
         mock_note.created = "2026-01-01T00:00:00Z"
         mock_note.updated = "2026-01-01T00:00:00Z"
         mock_note.save.return_value = "command:embed123"
@@ -49,6 +52,9 @@ class TestNoteCreation:
         mock_note.title = "Empty Note"
         mock_note.content = "Some content"
         mock_note.note_type = "human"
+        mock_note.board_column = "inbox"
+        mock_note.source_id = None
+        mock_note.source_insight_id = None
         mock_note.created = "2026-01-01T00:00:00Z"
         mock_note.updated = "2026-01-01T00:00:00Z"
         mock_note.save.return_value = None
@@ -76,6 +82,9 @@ class TestNoteUpdate:
         mock_note.title = "Test Note"
         mock_note.content = "Original content"
         mock_note.note_type = "human"
+        mock_note.board_column = "inbox"
+        mock_note.source_id = None
+        mock_note.source_insight_id = None
         mock_note.created = "2026-01-01T00:00:00Z"
         mock_note.updated = "2026-01-01T00:00:00Z"
         mock_note.save.return_value = "command:embed789"
@@ -100,6 +109,9 @@ class TestNoteUpdate:
         mock_note.title = "Test Note"
         mock_note.content = "Some content"
         mock_note.note_type = "human"
+        mock_note.board_column = "inbox"
+        mock_note.source_id = None
+        mock_note.source_insight_id = None
         mock_note.created = "2026-01-01T00:00:00Z"
         mock_note.updated = "2026-01-01T00:00:00Z"
         mock_note.save.return_value = None
