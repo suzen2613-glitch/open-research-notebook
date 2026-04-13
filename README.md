@@ -5,13 +5,8 @@
 <!-- [![LinkedIn][linkedin-shield]][linkedin-url] -->
 
 
-<!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/suzen2613-glitch/open-research-notebook">
-    Open Research Notebook
-  </a>
-
   <h3 align="center">Open Research Notebook</h3>
 
   <p align="center">
