@@ -38,8 +38,6 @@
 
 > This repository is a customized derivative of [`lfnovo/open-notebook`](https://github.com/lfnovo/open-notebook), published under the original MIT license with additional workflow and UI changes.
 
-![New Notebook](docs/assets/asset_list.png)
-
 This fork keeps the self-hosted and multi-model foundation of Open Notebook, but shifts the product toward an academic research workflow:
 
 - ingest papers from Zotero
@@ -47,6 +45,30 @@ This fork keeps the self-hosted and multi-model foundation of Open Notebook, but
 - generate paper summaries and structured wiki cards
 - maintain a notebook layout that is easier to use as an LLM-ready knowledge base
 - export cleaner research artifacts into downstream tools such as Obsidian
+
+### 1. Import From Zotero
+
+<img src="docs/assets/workflow/zotero-import.png" alt="Import from Zotero" width="100%">
+
+Importing papers starts from Zotero collections instead of isolated file uploads. This makes the notebook closer to a real paper-reading workflow and preserves a cleaner bridge from literature collection into the research workspace.
+
+### 2. Four-Column Research Notebook
+
+<img src="docs/assets/workflow/notebook-four-column.png" alt="Four-column notebook layout" width="100%">
+
+The main notebook page is organized into four distinct columns: `Sources`, `Summary`, `Wiki Card`, and `Notes`. This layout separates reading, extraction, knowledge modeling, and writing so the notebook can act as a better LLM-ready knowledge base.
+
+### 3. API And CLI-Friendly Workflows
+
+<img src="docs/assets/workflow/api-cli.png" alt="API and CLI workflow" width="100%">
+
+The project is not limited to the browser UI. It can also be queried through APIs and CLI-style workflows, which makes it easier to automate paper summaries, inspect wiki-card status, and integrate the workspace into larger research tooling.
+
+### 4. Obsidian-Oriented Export
+
+<img src="docs/assets/workflow/obsidian-export.png" alt="Obsidian export" width="100%">
+
+Structured wiki cards can be exported into an Obsidian-friendly layout with concepts, questions, summaries, and stable file organization. This makes the workspace useful both as a live system and as a downstream knowledge layer.
 
 ### At a glance
 
