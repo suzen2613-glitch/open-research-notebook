@@ -1,6 +1,7 @@
 <a id="readme-top"></a>
 
 [![MIT License][license-shield]][license-url]
+[![linux.do](https://shorturl.at/ggSqS)](https://linux.do)
 <!-- [![LinkedIn][linkedin-shield]][linkedin-url] -->
 
 
