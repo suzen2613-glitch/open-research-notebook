@@ -64,11 +64,28 @@ The main notebook page is organized into four distinct columns: `Sources`, `Summ
 
 The project is not limited to the browser UI. It can also be queried through APIs and CLI-style workflows, which makes it easier to automate paper summaries, inspect wiki-card status, and integrate the workspace into larger research tooling.
 
+#### Why API Access Matters
+
+- automate paper ingestion, PDF conversion, and downstream workflows
+- fetch `summary` and `wiki card` artifacts programmatically instead of only through the UI
+- integrate the notebook with CLI tools, scripts, agents, and external research pipelines
+- treat the workspace as a reusable knowledge service, not just a web app
+
 ### 4. Obsidian-Oriented Export
 
 <img src="docs/assets/workflow/obsidian-export.png" alt="Obsidian export" width="100%">
 
 Structured wiki cards can be exported into an Obsidian-friendly layout with concepts, questions, summaries, and stable file organization. This makes the workspace useful both as a live system and as a downstream knowledge layer.
+
+### What Is A Wiki Card?
+
+A `wiki card` is not just another note. It is a canonical, structured knowledge object derived from a paper source.
+
+- `source` keeps the raw paper content
+- `summary` keeps the readable synthesis
+- `wiki card` keeps the normalized metadata layer: concepts, questions, domains, paper type, relations, and navigation-oriented fields
+
+This structure makes the notebook more useful for retrieval, comparison, MOC pages, Obsidian export, and later LLM workflows that need stable knowledge objects instead of only long-form text.
 
 ### At a glance
 
