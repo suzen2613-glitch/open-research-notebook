@@ -8,7 +8,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/suzen2613-glitch/open-research-notebook">
-    <img src="docs/assets/hero.svg" alt="Logo">
+    Open Research Notebook
   </a>
 
   <h3 align="center">Open Research Notebook</h3>
