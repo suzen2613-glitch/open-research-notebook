@@ -13,7 +13,7 @@ services:
     pull_policy: always
 
   open_notebook:
-    image: ghcr.io/suzen2613-glitch/open-notebook-ai-workspace:v1-dev
+    image: ghcr.io/suzen2613-glitch/open-research-notebook:v1-dev
     ports:
       - "8502:8502"  # Web UI
       - "5055:5055"  # REST API

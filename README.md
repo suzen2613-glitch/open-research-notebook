@@ -7,11 +7,11 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/suzen2613-glitch/open-notebook-ai-workspace">
+  <a href="https://github.com/suzen2613-glitch/open-research-notebook">
     <img src="docs/assets/hero.svg" alt="Logo">
   </a>
 
-  <h3 align="center">Open Notebook AI Workspace</h3>
+  <h3 align="center">Open Research Notebook</h3>
 
   <p align="center">
     A research-focused derivative of Open Notebook for Zotero-driven paper ingestion,
@@ -182,7 +182,7 @@ This project is especially suited for:
 
 **Option A:** Download directly
 ```bash
-curl -o docker-compose.yml https://raw.githubusercontent.com/suzen2613-glitch/open-notebook-ai-workspace/main/docker-compose.yml
+curl -o docker-compose.yml https://raw.githubusercontent.com/suzen2613-glitch/open-research-notebook/main/docker-compose.yml
 ```
 
 **Option B:** Create the file manually
@@ -201,7 +201,7 @@ services:
     restart: always
 
   open_notebook:
-    image: ghcr.io/suzen2613-glitch/open-notebook-ai-workspace:v1-dev
+    image: ghcr.io/suzen2613-glitch/open-research-notebook:v1-dev
     ports:
       - "8502:8502"
       - "5055:5055"
@@ -262,7 +262,7 @@ Done! You're ready to create your first notebook.
 ### 📖 Need Help?
 
 - **🆘 Troubleshooting**: [5-minute troubleshooting guide](docs/6-TROUBLESHOOTING/quick-fixes.md)
-- **🐛 Report Issues**: [GitHub Issues](https://github.com/suzen2613-glitch/open-notebook-ai-workspace/issues)
+- **🐛 Report Issues**: [GitHub Issues](https://github.com/suzen2613-glitch/open-research-notebook/issues)
 
 ---
 
@@ -290,7 +290,7 @@ Contributions are welcome, especially around:
 
 Key references:
 
-- **[GitHub Issues](https://github.com/suzen2613-glitch/open-notebook-ai-workspace/issues)** for bugs and feature requests
+- **[GitHub Issues](https://github.com/suzen2613-glitch/open-research-notebook/issues)** for bugs and feature requests
 - **[Contributing Guide](CONTRIBUTING.md)** for contribution workflow
 - **Tech stack**: Python, FastAPI, Next.js, React, SurrealDB
 
@@ -306,8 +306,8 @@ This repository is released under the MIT License. See [LICENSE](LICENSE) for de
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[license-shield]: https://img.shields.io/github/license/suzen2613-glitch/open-notebook-ai-workspace.svg?style=for-the-badge
-[license-url]: https://github.com/suzen2613-glitch/open-notebook-ai-workspace/blob/main/LICENSE
+[license-shield]: https://img.shields.io/github/license/suzen2613-glitch/open-research-notebook.svg?style=for-the-badge
+[license-url]: https://github.com/suzen2613-glitch/open-research-notebook/blob/main/LICENSE
 [Next.js]: https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white
 [Next-url]: https://nextjs.org/
 [React]: https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black

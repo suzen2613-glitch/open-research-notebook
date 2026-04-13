@@ -236,8 +236,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Open Notebook API",
-    description="API for Open Notebook - Research Assistant",
+    title="Open Research Notebook API",
+    description="API for Open Research Notebook - Research Assistant",
     lifespan=lifespan,
 )
 
@@ -398,7 +398,7 @@ app.mount("/api/images", StaticFiles(directory=IMAGES_FOLDER), name="images")
 
 @app.get("/")
 async def root():
-    return {"message": "Open Notebook API is running"}
+    return {"message": "Open Research Notebook API is running"}
 
 
 @app.get("/health")

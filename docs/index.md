@@ -1,6 +1,6 @@
-# Open Notebook Documentation
+# Open Research Notebook Documentation
 
-Welcome to Open Notebook - a privacy-focused AI research assistant. This documentation is organized for different needs.
+Welcome to Open Research Notebook - a privacy-focused AI research assistant. This documentation is organized for different needs.
 
 ---
 
