@@ -52,13 +52,21 @@ This fork keeps the self-hosted and multi-model foundation of Open Notebook, but
 
 Importing papers starts from Zotero collections instead of isolated file uploads. This makes the notebook closer to a real paper-reading workflow and preserves a cleaner bridge from literature collection into the research workspace.
 
-### 2. Four-Column Research Notebook
+### 2. PDF Conversion Pipeline
+
+<img src="docs/assets/workflow/pdf-markdown-render.png" alt="PDF converted into markdown with rendered figures" width="100%">
+
+PDF conversion is treated as a first-class workflow in this fork. The system can use local conversion engines or API-backed conversion paths, switch between newer tools, and fall back pragmatically when one engine is not ideal for a paper.
+
+Converted figures and image assets are normalized into the workspace and rendered directly in the notebook UI, so converted papers are readable as real mixed text-and-figure documents instead of broken external image links.
+
+### 3. Four-Column Research Notebook
 
 <img src="docs/assets/workflow/notebook-four-column.png" alt="Four-column notebook layout" width="100%">
 
 The main notebook page is organized into four distinct columns: `Sources`, `Summary`, `Wiki Card`, and `Notes`. This layout separates reading, extraction, knowledge modeling, and writing so the notebook can act as a better LLM-ready knowledge base.
 
-### 3. API And CLI-Friendly Workflows
+### 4. API And CLI-Friendly Workflows
 
 <img src="docs/assets/workflow/api-cli.png" alt="API and CLI workflow" width="100%">
 
@@ -71,7 +79,7 @@ The project is not limited to the browser UI. It can also be queried through API
 - integrate the notebook with CLI tools, scripts, agents, and external research pipelines
 - treat the workspace as a reusable knowledge service, not just a web app
 
-### 4. Obsidian-Oriented Export
+### 5. Obsidian-Oriented Export
 
 <img src="docs/assets/workflow/obsidian-export.png" alt="Obsidian export" width="100%">
 
