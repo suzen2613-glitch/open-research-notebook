@@ -217,7 +217,7 @@ async def _link_source_to_notebooks(source_id: str, notebook_ids: list[str]) -> 
     for notebook_id in notebook_ids:
         notebook_record_id = ensure_record_id(notebook_id)
         existing_ref = await repo_query(
-            "SELECT id FROM reference WHERE out = $source_id AND in = $notebook_id LIMIT 1",
+            "SELECT id FROM reference WHERE in = $source_id AND out = $notebook_id LIMIT 1",
             {
                 "source_id": source_record_id,
                 "notebook_id": notebook_record_id,
@@ -287,7 +287,13 @@ async def _find_existing_zotero_source(item: ZoteroPdfItem) -> str | None:
         },
     )
     if indexed and indexed[0].get("source"):
-        return str(indexed[0]["source"])
+        candidate_source_id = str(indexed[0]["source"])
+        existing_source = await repo_query(
+            "SELECT id FROM source WHERE id = $source_id LIMIT 1",
+            {"source_id": ensure_record_id(candidate_source_id)},
+        )
+        if existing_source:
+            return candidate_source_id
 
     marker = _build_zotero_marker(item)
     legacy_candidates = await repo_query(
@@ -314,6 +320,8 @@ async def _find_existing_zotero_source(item: ZoteroPdfItem) -> str | None:
 async def _find_existing_source_by_actual_title(
     actual_title: str | None,
     notebook_ids: list[str],
+    *,
+    exclude_source_id: str | None = None,
 ) -> str | None:
     normalized_title = normalize_paper_title(actual_title)
     if not normalized_title:
@@ -323,11 +331,15 @@ async def _find_existing_source_by_actual_title(
         existing = await find_source_by_normalized_title(
             normalized_title,
             notebook_id=notebook_id,
+            exclude_source_id=exclude_source_id,
         )
         if existing:
             return existing.source_id
 
-    existing = await find_source_by_normalized_title(normalized_title)
+    existing = await find_source_by_normalized_title(
+        normalized_title,
+        exclude_source_id=exclude_source_id,
+    )
     if existing:
         return existing.source_id
 
@@ -512,6 +524,7 @@ async def import_zotero_collection(
                     existing_source_id = await _find_existing_source_by_actual_title(
                         actual_title,
                         notebook_ids,
+                        exclude_source_id=str(source.id),
                     )
                     if existing_source_id:
                         linked_notebooks = await _link_source_to_notebooks(

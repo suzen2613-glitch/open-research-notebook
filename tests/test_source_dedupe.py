@@ -156,3 +156,101 @@ async def test_analyze_notebook_duplicates_groups_by_extracted_full_text_title(m
     assert result[0]["keep_source_id"] == "source:1"
     assert result[0]["duplicate_count"] == 2
     assert {item["source_id"] for item in result[0]["duplicates"]} == {"source:2", "source:3"}
+
+
+@pytest.mark.asyncio
+async def test_cleanup_notebook_duplicates_unlinks_shared_sources_with_correct_direction(
+    monkeypatch,
+):
+    issued_queries = []
+
+    async def fake_analyze_notebook_duplicates(notebook_id):
+        return [
+            {
+                "normalized_title": "attention is all you need",
+                "keep_source_id": "source:keep",
+                "keep_title": "Attention Is All You Need",
+                "duplicate_count": 1,
+                "duplicates": [
+                    {
+                        "source_id": "source:dup",
+                        "title": "Attention Is All You Need",
+                        "created": "2026-04-13 10:00:00",
+                        "updated": "2026-04-13 10:00:00",
+                    }
+                ],
+            }
+        ]
+
+    class FakeSource:
+        async def get_notebook_ids(self):
+            return ["notebook:test", "notebook:other"]
+
+    async def fake_repo_query(query, vars=None):
+        issued_queries.append((query, vars))
+        return []
+
+    monkeypatch.setattr(
+        source_dedupe, "analyze_notebook_duplicates", fake_analyze_notebook_duplicates
+    )
+
+    async def fake_source_get(source_id):
+        return FakeSource()
+
+    monkeypatch.setattr(source_dedupe.Source, "get", fake_source_get)
+    monkeypatch.setattr(source_dedupe, "repo_query", fake_repo_query)
+    monkeypatch.setattr(source_dedupe, "ensure_record_id", lambda value: value)
+
+    result = await source_dedupe.cleanup_notebook_duplicates("notebook:test")
+
+    assert result["removed_count"] == 0
+    assert result["unlinked_count"] == 1
+    assert issued_queries == [
+        (
+            "DELETE reference WHERE in = $source_id AND out = $notebook_id",
+            {"source_id": "source:dup", "notebook_id": "notebook:test"},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_find_source_by_normalized_title_requires_notebook_membership_and_respects_exclusion(
+    monkeypatch,
+):
+    async def fake_repo_query(query, vars=None):
+        return [
+            {
+                "id": "source:self",
+                "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+                "full_text": None,
+                "asset": None,
+                "notebook_ids": ["notebook:llm"],
+            },
+            {
+                "id": "source:unlinked",
+                "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+                "full_text": None,
+                "asset": None,
+                "notebook_ids": [],
+            },
+            {
+                "id": "source:other",
+                "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+                "full_text": None,
+                "asset": None,
+                "notebook_ids": ["notebook:other"],
+            },
+        ]
+
+    monkeypatch.setattr(source_dedupe, "repo_query", fake_repo_query)
+
+    normalized = source_dedupe.normalize_paper_title(
+        "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
+    )
+    result = await source_dedupe.find_source_by_normalized_title(
+        normalized,
+        notebook_id="notebook:llm",
+        exclude_source_id="source:self",
+    )
+
+    assert result is None

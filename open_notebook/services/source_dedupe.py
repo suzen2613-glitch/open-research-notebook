@@ -250,7 +250,7 @@ async def find_source_by_normalized_title(
             continue
 
         notebook_ids = [str(item) for item in (row.get("notebook_ids") or []) if item]
-        if notebook_id and notebook_ids and notebook_id not in notebook_ids:
+        if notebook_id and notebook_id not in notebook_ids:
             continue
 
         exclusive_to_notebook = bool(
@@ -270,9 +270,7 @@ async def analyze_notebook_duplicates(notebook_id: str) -> list[dict[str, Any]]:
     rows = await repo_query(
         """
         SELECT id, title, full_text, asset, created, updated
-        FROM (
-            SELECT VALUE in FROM reference WHERE out = $notebook_id
-        )
+        FROM array::distinct((SELECT VALUE in FROM reference WHERE out = $notebook_id))
         ORDER BY updated DESC
         """,
         {"notebook_id": ensure_record_id(notebook_id)},
@@ -339,7 +337,7 @@ async def cleanup_notebook_duplicates(notebook_id: str) -> dict[str, Any]:
                 continue
 
             await repo_query(
-                "DELETE reference WHERE out = $source_id AND in = $notebook_id",
+                "DELETE reference WHERE in = $source_id AND out = $notebook_id",
                 {
                     "source_id": ensure_record_id(source_id),
                     "notebook_id": ensure_record_id(notebook_id),

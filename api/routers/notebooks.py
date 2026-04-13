@@ -238,7 +238,7 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
 
         # Check if reference already exists (idempotency)
         existing_ref = await repo_query(
-            "SELECT * FROM reference WHERE out = $source_id AND in = $notebook_id",
+            "SELECT * FROM reference WHERE in = $source_id AND out = $notebook_id",
             {
                 "notebook_id": ensure_record_id(notebook_id),
                 "source_id": ensure_record_id(source_id),
@@ -278,7 +278,7 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
 
         # Delete the reference record linking source to notebook
         await repo_query(
-            "DELETE FROM reference WHERE out = $source_id AND in = $notebook_id",
+            "DELETE FROM reference WHERE in = $source_id AND out = $notebook_id",
             {
                 "notebook_id": ensure_record_id(notebook_id),
                 "source_id": ensure_record_id(source_id),
