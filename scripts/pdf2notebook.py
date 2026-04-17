@@ -3,10 +3,10 @@
 PDF → Markdown → Open Notebook 一键上传工具
 
 用法:
-    python pdf2notebook.py 文件.pdf                          # 转换并上传到默认 notebook
-    python pdf2notebook.py 文件.pdf --notebook NOTEBOOK_ID   # 指定 notebook
-    python pdf2notebook.py 文件.pdf --only-convert           # 只转换不上传
-    python pdf2notebook.py *.pdf                             # 批量处理
+    python scripts/pdf2notebook.py 文件.pdf                          # 转换并上传到默认 notebook
+    python scripts/pdf2notebook.py 文件.pdf --notebook NOTEBOOK_ID   # 指定 notebook
+    python scripts/pdf2notebook.py 文件.pdf --only-convert           # 只转换不上传
+    python scripts/pdf2notebook.py *.pdf                             # 批量处理
 
 图片托管在本地服务器 http://localhost:8888/ 上。
 启动图片服务器: bash ./start-images.sh
