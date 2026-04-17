@@ -12,6 +12,7 @@ from pydantic import (
 
 from open_notebook.database.repository import (
     ensure_record_id,
+    normalize_record_id_string,
     repo_create,
     repo_delete,
     repo_query,
@@ -34,6 +35,13 @@ class ObjectModel(BaseModel):
     nullable_fields: ClassVar[set[str]] = set()  # Fields that can be saved as None
     created: Optional[datetime] = None
     updated: Optional[datetime] = None
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def parse_id(cls, value):
+        if value is None:
+            return None
+        return normalize_record_id_string(str(value))
 
     @classmethod
     async def get_all(cls: Type[T], order_by=None) -> List[T]:

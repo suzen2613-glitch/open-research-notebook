@@ -17,6 +17,7 @@ from open_notebook.exceptions import OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.context_builder import ContextBuilder
 from open_notebook.utils.error_classifier import classify_error
+from open_notebook.utils.source_evidence import format_source_evidence
 from open_notebook.utils.text_utils import extract_text_content
 
 
@@ -28,6 +29,7 @@ class SourceChatState(TypedDict):
     context: Optional[str]
     model_override: Optional[str]
     context_indicators: Optional[Dict[str, List[str]]]
+    evidence_context: Optional[str]
 
 
 def call_model_with_source_context(
@@ -54,6 +56,26 @@ def call_model_with_source_context(
 def _call_model_with_source_context_inner(
     state: SourceChatState, config: RunnableConfig
 ) -> dict:
+    def run_async(coro):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+
+        import concurrent.futures
+
+        def run_in_new_loop():
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            return executor.submit(run_in_new_loop).result()
+
     source_id = state.get("source_id")
     if not source_id:
         raise ValueError("source_id is required in state")
@@ -96,6 +118,7 @@ def _call_model_with_source_context_inner(
         "sources": [],
         "insights": [],
         "notes": [],
+        "evidence": [],
     }
 
     if context_data.get("sources"):
@@ -115,12 +138,20 @@ def _call_model_with_source_context_inner(
 
     # Format context for the prompt
     formatted_context = _format_source_context(context_data)
+    evidence_context = "No structured evidence excerpts are available for this source."
+    if source and source.id:
+        evidence_chunks = run_async(source.get_embeddings(limit=12))
+        evidence_context = format_source_evidence(evidence_chunks)
+        context_indicators["evidence"] = [
+            embedding.id for embedding in evidence_chunks if embedding.id
+        ]
 
     # Build prompt data for the template
     prompt_data = {
         "source": source.model_dump() if source else None,
         "insights": [insight.model_dump() for insight in insights] if insights else [],
         "context": formatted_context,
+        "evidence_context": evidence_context,
         "context_indicators": context_indicators,
     }
 
@@ -184,6 +215,7 @@ def _call_model_with_source_context_inner(
         "insights": insights,
         "context": formatted_context,
         "context_indicators": context_indicators,
+        "evidence_context": evidence_context,
     }
 
 

@@ -449,7 +449,12 @@ export default function SearchPage() {
                             return null
                           }
                           const [type, id] = result.parent_id.split(':')
-                          const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
+                          const modalType =
+                            type === 'source_insight'
+                              ? 'insight'
+                              : type === 'source_embedding'
+                                ? 'evidence'
+                                : type as 'source' | 'note' | 'insight' | 'evidence'
 
                           return (
                           <Card key={index}>

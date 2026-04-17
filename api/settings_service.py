@@ -31,6 +31,9 @@ class SettingsService:
             default_content_processing_engine_url=settings_data.get(
                 "default_content_processing_engine_url"
             ),
+            default_pdf_processing_engine=settings_data.get(
+                "default_pdf_processing_engine"
+            ),
             default_embedding_option=settings_data.get("default_embedding_option"),
             auto_delete_files=settings_data.get("auto_delete_files"),
             youtube_preferred_languages=settings_data.get(
@@ -45,6 +48,7 @@ class SettingsService:
         updates = {
             "default_content_processing_engine_doc": settings.default_content_processing_engine_doc,
             "default_content_processing_engine_url": settings.default_content_processing_engine_url,
+            "default_pdf_processing_engine": settings.default_pdf_processing_engine,
             "default_embedding_option": settings.default_embedding_option,
             "auto_delete_files": settings.auto_delete_files,
             "youtube_preferred_languages": settings.youtube_preferred_languages,
@@ -63,6 +67,9 @@ class SettingsService:
         )
         settings.default_content_processing_engine_url = settings_data.get(
             "default_content_processing_engine_url"
+        )
+        settings.default_pdf_processing_engine = settings_data.get(
+            "default_pdf_processing_engine"
         )
         settings.default_embedding_option = settings_data.get(
             "default_embedding_option"

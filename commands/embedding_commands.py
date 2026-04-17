@@ -1,3 +1,4 @@
+import re
 import time
 from typing import Dict, List, Literal, Optional
 
@@ -31,6 +32,67 @@ def get_command_id(input_data: CommandInput) -> str:
     return "unknown"
 
 
+def _extract_markdown_headings(text: str) -> List[tuple[int, str]]:
+    headings: List[tuple[int, str]] = []
+    for match in re.finditer(r"^(#{1,6})\s+(.+)$", text, re.MULTILINE):
+        heading = match.group(2).strip()
+        if heading:
+            headings.append((match.start(), heading))
+    return headings
+
+
+def _section_for_offset(offset: int, headings: List[tuple[int, str]]) -> Optional[str]:
+    current_section: Optional[str] = None
+    for position, heading in headings:
+        if position > offset:
+            break
+        current_section = heading
+    return current_section
+
+
+def _locate_chunk_start(text: str, chunk: str, cursor: int) -> int:
+    if not chunk:
+        return cursor
+
+    exact_start = text.find(chunk, cursor)
+    if exact_start != -1:
+        return exact_start
+
+    stripped = chunk.strip()
+    if stripped:
+        stripped_start = text.find(stripped, cursor)
+        if stripped_start != -1:
+            return stripped_start
+
+        prefix = stripped[: min(len(stripped), 120)]
+        prefix_start = text.find(prefix, cursor)
+        if prefix_start != -1:
+            return prefix_start
+
+    return cursor
+
+
+def build_chunk_metadata(text: str, chunks: List[str]) -> List[Dict[str, Optional[int | str]]]:
+    """Approximate character spans and nearest markdown section for each chunk."""
+    metadata: List[Dict[str, Optional[int | str]]] = []
+    headings = _extract_markdown_headings(text)
+    cursor = 0
+
+    for chunk in chunks:
+        start = _locate_chunk_start(text, chunk, cursor)
+        end = min(len(text), start + len(chunk))
+        metadata.append(
+            {
+                "char_start": start,
+                "char_end": end,
+                "section": _section_for_offset(start, headings),
+            }
+        )
+        cursor = max(cursor, end)
+
+    return metadata
+
+
 class RebuildEmbeddingsInput(CommandInput):
     mode: Literal["existing", "all"]
     include_sources: bool = True
@@ -61,6 +123,9 @@ class CreateInsightInput(CommandInput):
     source_id: str
     insight_type: str
     content: str
+    transformation_id: Optional[str] = None
+    prompt_title: Optional[str] = None
+    prompt_snapshot: Optional[str] = None
 
 
 class CreateInsightOutput(CommandOutput):
@@ -390,11 +455,15 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
             )
 
         # 6. Bulk INSERT source_embedding records
+        chunk_metadata = build_chunk_metadata(source.full_text, chunks)
         records = [
             {
                 "source": ensure_record_id(input_data.source_id),
                 "order": idx,
                 "content": chunk,
+                "section": chunk_metadata[idx]["section"],
+                "char_start": chunk_metadata[idx]["char_start"],
+                "char_end": chunk_metadata[idx]["char_end"],
                 "embedding": embedding,
             }
             for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings))
@@ -486,13 +555,19 @@ async def create_insight_command(
             CREATE source_insight CONTENT {
                 "source": $source_id,
                 "insight_type": $insight_type,
-                "content": $content
+                "content": $content,
+                "transformation_id": $transformation_id,
+                "prompt_title": $prompt_title,
+                "prompt_snapshot": $prompt_snapshot
             };
             """,
             {
                 "source_id": ensure_record_id(input_data.source_id),
                 "insight_type": input_data.insight_type,
                 "content": input_data.content,
+                "transformation_id": input_data.transformation_id,
+                "prompt_title": input_data.prompt_title,
+                "prompt_snapshot": input_data.prompt_snapshot,
             },
         )
 

@@ -13,6 +13,9 @@ class ContentSettings(RecordModel):
     default_content_processing_engine_url: Optional[
         Literal["auto", "firecrawl", "jina", "simple"]
     ] = Field("auto", description="Default Content Processing Engine for URLs")
+    default_pdf_processing_engine: Optional[
+        Literal["auto", "marker", "mineru", "mineru_cloud"]
+    ] = Field("auto", description="Default PDF Processing Engine")
     default_embedding_option: Optional[Literal["ask", "always", "never"]] = Field(
         "ask", description="Default Embedding Option for Vector Search"
     )

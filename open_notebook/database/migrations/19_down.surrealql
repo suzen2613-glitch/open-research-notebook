@@ -1,0 +1,4 @@
+-- Rollback Migration 19
+
+REMOVE INDEX IF EXISTS idx_source_wiki_card_source ON TABLE source_wiki_card;
+REMOVE TABLE IF EXISTS source_wiki_card;

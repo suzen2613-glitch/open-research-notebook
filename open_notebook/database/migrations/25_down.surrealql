@@ -1,0 +1,2 @@
+REMOVE FIELD IF EXISTS status ON TABLE source;
+REMOVE FIELD IF EXISTS error_message ON TABLE source;

@@ -4,6 +4,7 @@ import apiClient from './client'
 import { 
   SourceListResponse, 
   SourceDetailResponse, 
+  SourceReferenceConnectionsResponse,
   SourceResponse,
   SourceStatusResponse,
   CreateSourceRequest, 
@@ -80,10 +81,19 @@ export const sourcesApi = {
     return response.data
   },
 
-  upload: async (file: File, notebook_id: string) => {
+  getReferences: async (id: string, notebook_id?: string) => {
+    const response = await apiClient.get<SourceReferenceConnectionsResponse>(`/sources/${id}/references`, {
+      params: notebook_id ? { notebook_id } : undefined,
+    })
+    return response.data
+  },
+
+  upload: async (file: File, notebook_id?: string) => {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('notebook_id', notebook_id)
+    if (notebook_id) {
+      formData.append('notebook_id', notebook_id)
+    }
     formData.append('type', 'upload')
     formData.append('async_processing', 'true')
     

@@ -1,0 +1,5 @@
+-- Migration 26: wiki-card introduction-derived positioning fields
+
+DEFINE FIELD IF NOT EXISTS research_context ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS claimed_gap ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS positioning_summary ON TABLE source_wiki_card TYPE option<string>;

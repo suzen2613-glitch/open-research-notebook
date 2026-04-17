@@ -1,0 +1,10 @@
+-- Migration 24: wiki-card navigation metadata for MOC and Dataview
+
+DEFINE FIELD IF NOT EXISTS short_title ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS paper_type ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS domains ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS keywords ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS moc_groups ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS recommended_entry_points ON TABLE source_wiki_card TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS is_key_paper ON TABLE source_wiki_card TYPE bool DEFAULT false;
+DEFINE FIELD IF NOT EXISTS core_concept_ids ON TABLE source_wiki_card TYPE array<string>;

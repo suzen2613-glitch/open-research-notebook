@@ -5,6 +5,8 @@ import {
   UpdateNotebookRequest,
   NotebookDeletePreview,
   NotebookDeleteResponse,
+  DuplicateSourceGroupResponse,
+  DuplicateCleanupResponse,
 } from '@/lib/types/api'
 
 export const notebooksApi = {
@@ -49,6 +51,20 @@ export const notebooksApi = {
 
   removeSource: async (notebookId: string, sourceId: string) => {
     const response = await apiClient.delete(`/notebooks/${notebookId}/sources/${sourceId}`)
+    return response.data
+  },
+
+  listDuplicateSources: async (notebookId: string) => {
+    const response = await apiClient.get<DuplicateSourceGroupResponse[]>(
+      `/notebooks/${notebookId}/duplicate-sources`
+    )
+    return response.data
+  },
+
+  cleanupDuplicateSources: async (notebookId: string) => {
+    const response = await apiClient.post<DuplicateCleanupResponse>(
+      `/notebooks/${notebookId}/duplicate-sources/cleanup`
+    )
     return response.data
   },
 }

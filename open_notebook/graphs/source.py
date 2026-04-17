@@ -1,5 +1,9 @@
+import asyncio
 import operator
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+from types import SimpleNamespace
+from urllib.parse import urlparse
 
 from content_core import extract_content
 from content_core.common import ProcessSourceState
@@ -14,6 +18,10 @@ from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Asset, Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.graphs.transformation import graph as transform_graph
+from open_notebook.services.source_dedupe import extract_paper_title_from_markdown
+from open_notebook.utils.pdf_conversion import convert_pdf
+
+PROVISIONAL_SOURCE_TITLES = {"Processing..."}
 
 
 class SourceState(TypedDict):
@@ -32,23 +40,7 @@ class TransformationState(TypedDict):
 
 
 async def content_process(state: SourceState) -> dict:
-    content_settings = ContentSettings(
-        default_content_processing_engine_doc="auto",
-        default_content_processing_engine_url="auto",
-        default_embedding_option="ask",
-        auto_delete_files="yes",
-        youtube_preferred_languages=[
-            "en",
-            "pt",
-            "es",
-            "de",
-            "nl",
-            "en-GB",
-            "fr",
-            "hi",
-            "ja",
-        ],
-    )
+    content_settings: ContentSettings = await ContentSettings.get_instance()  # type: ignore[assignment]
     content_state: Dict[str, Any] = state["content_state"]  # type: ignore[assignment]
 
     content_state["url_engine"] = (
@@ -58,6 +50,19 @@ async def content_process(state: SourceState) -> dict:
         content_settings.default_content_processing_engine_doc or "auto"
     )
     content_state["output_format"] = "markdown"
+
+    file_path = content_state.get("file_path")
+    if isinstance(file_path, str) and Path(file_path).suffix.lower() == ".pdf":
+        selected_pdf_engine = content_settings.default_pdf_processing_engine or "auto"
+        logger.info(f"Using PDF engine pipeline for source {state['source_id']}: {file_path}")
+        pdf_result = await asyncio.to_thread(
+            convert_pdf, file_path, state["source_id"], selected_pdf_engine
+        )
+        extracted_title = extract_paper_title_from_markdown(pdf_result.get("content"))
+        if extracted_title:
+            pdf_result["title"] = extracted_title
+        processed_state = SimpleNamespace(**pdf_result)
+        return {"content_state": processed_state}
 
     # Add speech-to-text model configuration from Default Models
     try:
@@ -106,9 +111,17 @@ async def save_source(state: SourceState) -> dict:
     source.asset = Asset(url=content_state.url, file_path=content_state.file_path)
     source.full_text = content_state.content
 
-    # Preserve existing title if none provided in processed content
-    if content_state.title:
+    # Preserve true user-defined titles, but allow placeholder file names to be
+    # replaced once we can extract the real paper title from the PDF.
+    if should_replace_source_title(
+        source.title,
+        content_state.title,
+        file_path=content_state.file_path,
+        url=content_state.url,
+    ):
         source.title = content_state.title
+    source.status = "completed"
+    source.error_message = None
 
     await source.save()
 
@@ -125,6 +138,56 @@ async def save_source(state: SourceState) -> dict:
             )
 
     return {"source": source}
+
+
+def should_replace_source_title(
+    existing_title: Optional[str],
+    extracted_title: Optional[str],
+    *,
+    file_path: Optional[str] = None,
+    url: Optional[str] = None,
+) -> bool:
+    if not extracted_title or not extracted_title.strip():
+        return False
+    if not existing_title or not existing_title.strip():
+        return True
+    normalized_existing = normalize_title_for_compare(existing_title)
+    if normalized_existing in {
+        normalize_title_for_compare(title) for title in PROVISIONAL_SOURCE_TITLES
+    }:
+        return True
+
+    auto_titles = candidate_auto_titles(file_path=file_path, url=url)
+    return normalized_existing in auto_titles
+
+
+def candidate_auto_titles(
+    *,
+    file_path: Optional[str] = None,
+    url: Optional[str] = None,
+) -> set[str]:
+    candidates: set[str] = set()
+
+    if file_path:
+        stem = Path(file_path).stem.replace("_", " ").strip()
+        normalized = normalize_title_for_compare(stem)
+        if normalized:
+            candidates.add(normalized)
+
+    if url:
+        parsed = urlparse(url)
+        path_name = Path(parsed.path).stem.replace("_", " ").strip()
+        normalized = normalize_title_for_compare(path_name)
+        if normalized:
+            candidates.add(normalized)
+
+    return candidates
+
+
+def normalize_title_for_compare(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return " ".join(value.replace("_", " ").replace("-", " ").split()).strip().lower()
 
 
 def trigger_transformations(state: SourceState, config: RunnableConfig) -> List[Send]:

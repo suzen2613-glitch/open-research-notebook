@@ -17,6 +17,7 @@ async def get_settings():
         return SettingsResponse(
             default_content_processing_engine_doc=settings.default_content_processing_engine_doc,
             default_content_processing_engine_url=settings.default_content_processing_engine_url,
+            default_pdf_processing_engine=settings.default_pdf_processing_engine,
             default_embedding_option=settings.default_embedding_option,
             auto_delete_files=settings.auto_delete_files,
             youtube_preferred_languages=settings.youtube_preferred_languages,
@@ -50,6 +51,13 @@ async def update_settings(settings_update: SettingsUpdate):
                 Literal["auto", "firecrawl", "jina", "simple"],
                 settings_update.default_content_processing_engine_url,
             )
+        if settings_update.default_pdf_processing_engine is not None:
+            from typing import Literal, cast
+
+            settings.default_pdf_processing_engine = cast(
+                Literal["auto", "marker", "mineru", "mineru_cloud"],
+                settings_update.default_pdf_processing_engine,
+            )
         if settings_update.default_embedding_option is not None:
             from typing import Literal, cast
 
@@ -73,6 +81,7 @@ async def update_settings(settings_update: SettingsUpdate):
         return SettingsResponse(
             default_content_processing_engine_doc=settings.default_content_processing_engine_doc,
             default_content_processing_engine_url=settings.default_content_processing_engine_url,
+            default_pdf_processing_engine=settings.default_pdf_processing_engine,
             default_embedding_option=settings.default_embedding_option,
             auto_delete_files=settings.auto_delete_files,
             youtube_preferred_languages=settings.youtube_preferred_languages,

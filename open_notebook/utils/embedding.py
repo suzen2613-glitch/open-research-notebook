@@ -18,7 +18,7 @@ from loguru import logger
 
 from .chunking import CHUNK_SIZE, ContentType, chunk_text
 
-EMBEDDING_BATCH_SIZE = 50
+EMBEDDING_BATCH_SIZE = 10
 EMBEDDING_MAX_RETRIES = 3
 EMBEDDING_RETRY_DELAY = 2  # seconds
 

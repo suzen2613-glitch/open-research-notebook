@@ -1,0 +1,10 @@
+-- Migration 24 down: remove wiki-card navigation metadata fields
+
+REMOVE FIELD short_title ON TABLE source_wiki_card;
+REMOVE FIELD paper_type ON TABLE source_wiki_card;
+REMOVE FIELD domains ON TABLE source_wiki_card;
+REMOVE FIELD keywords ON TABLE source_wiki_card;
+REMOVE FIELD moc_groups ON TABLE source_wiki_card;
+REMOVE FIELD recommended_entry_points ON TABLE source_wiki_card;
+REMOVE FIELD is_key_paper ON TABLE source_wiki_card;
+REMOVE FIELD core_concept_ids ON TABLE source_wiki_card;

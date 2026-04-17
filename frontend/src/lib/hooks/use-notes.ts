@@ -6,11 +6,15 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorKey } from '@/lib/utils/error-handler'
 import { CreateNoteRequest, UpdateNoteRequest } from '@/lib/types/api'
 
-export function useNotes(notebookId?: string) {
+export function useNotes(notebookId?: string, options?: { enabled?: boolean }) {
+  const enabled = !!notebookId && (options?.enabled ?? true)
+
   return useQuery({
     queryKey: QUERY_KEYS.notes(notebookId),
     queryFn: () => notesApi.list({ notebook_id: notebookId }),
-    enabled: !!notebookId,
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -83,7 +87,6 @@ export function useDeleteNote() {
   return useMutation({
     mutationFn: (id: string) => notesApi.delete(id),
     onSuccess: () => {
-      // Invalidate all notes queries (with and without notebook IDs)
       queryClient.invalidateQueries({ queryKey: ['notes'] })
       toast({
         title: t.common.success,

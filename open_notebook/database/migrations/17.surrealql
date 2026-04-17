@@ -1,0 +1,5 @@
+-- Add prompt provenance metadata to source insights for refresh/regeneration
+
+DEFINE FIELD IF NOT EXISTS transformation_id ON TABLE source_insight TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS prompt_title ON TABLE source_insight TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS prompt_snapshot ON TABLE source_insight TYPE option<string>;

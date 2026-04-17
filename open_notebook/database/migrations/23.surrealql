@@ -1,0 +1,16 @@
+-- Migration 23: wiki-card bilingual metadata and evidence snippets
+
+DEFINE FIELD IF NOT EXISTS canonical_language ON TABLE concept TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS canonical_language ON TABLE question TYPE option<string>;
+
+DEFINE FIELD IF NOT EXISTS display_language ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS canonical_language ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS extraction_confidence ON TABLE source_wiki_card TYPE option<float>;
+
+DEFINE FIELD OVERWRITE evidence_snippets ON TABLE source_wiki_card TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS evidence_snippets.*.embedding_id ON TABLE source_wiki_card TYPE string;
+DEFINE FIELD IF NOT EXISTS evidence_snippets.*.section ON TABLE source_wiki_card TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS evidence_snippets.*.char_start ON TABLE source_wiki_card TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS evidence_snippets.*.char_end ON TABLE source_wiki_card TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS evidence_snippets.*.excerpt ON TABLE source_wiki_card TYPE string;
+DEFINE FIELD IF NOT EXISTS evidence_snippets.*.reason ON TABLE source_wiki_card TYPE string;

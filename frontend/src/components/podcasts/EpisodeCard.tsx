@@ -34,6 +34,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { TranslationKeys } from '@/lib/locales'
+import { getStoredBearerToken } from '@/lib/auth'
 
 interface EpisodeCardProps {
   episode: PodcastEpisode
@@ -162,25 +163,17 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
       }
 
       try {
-        let token: string | undefined
-        if (typeof window !== 'undefined') {
-          const raw = window.localStorage.getItem('auth-storage')
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw)
-              token = parsed?.state?.token
-            } catch (error) {
-              console.error('Failed to parse auth storage', error)
-            }
-          }
-        }
+        const token = getStoredBearerToken() ?? undefined
 
         const headers: HeadersInit = {}
         if (token) {
           headers.Authorization = `Bearer ${token}`
         }
 
-        const response = await fetch(directAudioUrl, { headers })
+        const response = await fetch(directAudioUrl, {
+          headers,
+          credentials: 'include',
+        })
         if (!response.ok) {
           throw new Error(`Audio request failed with status ${response.status}`)
         }

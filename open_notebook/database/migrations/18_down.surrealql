@@ -1,0 +1,9 @@
+-- Rollback Migration 18
+
+REMOVE FIELD IF EXISTS section ON TABLE source_embedding;
+REMOVE FIELD IF EXISTS char_start ON TABLE source_embedding;
+REMOVE FIELD IF EXISTS char_end ON TABLE source_embedding;
+
+REMOVE FIELD IF EXISTS board_column ON TABLE note;
+REMOVE FIELD IF EXISTS source_id ON TABLE note;
+REMOVE FIELD IF EXISTS source_insight_id ON TABLE note;

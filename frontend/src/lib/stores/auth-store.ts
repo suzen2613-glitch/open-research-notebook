@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { AUTH_DISABLED_TOKEN, COOKIE_AUTH_TOKEN, isBearerToken } from '@/lib/auth'
 import { getApiUrl } from '@/lib/config'
 
 interface AuthState {
@@ -39,6 +40,7 @@ export const useAuthStore = create<AuthState>()(
           const apiUrl = await getApiUrl()
           const response = await fetch(`${apiUrl}/api/auth/status`, {
             cache: 'no-store',
+            credentials: 'include',
           })
 
           if (!response.ok) {
@@ -51,7 +53,7 @@ export const useAuthStore = create<AuthState>()(
 
           // If auth is not required, mark as authenticated
           if (!required) {
-            set({ isAuthenticated: true, token: 'not-required' })
+            set({ isAuthenticated: true, token: AUTH_DISABLED_TOKEN })
           }
 
           return required
@@ -79,19 +81,19 @@ export const useAuthStore = create<AuthState>()(
         try {
           const apiUrl = await getApiUrl()
 
-          // Test auth with notebooks endpoint
-          const response = await fetch(`${apiUrl}/api/notebooks`, {
-            method: 'GET',
+          const response = await fetch(`${apiUrl}/api/auth/login`, {
+            method: 'POST',
             headers: {
-              'Authorization': `Bearer ${password}`,
               'Content-Type': 'application/json'
-            }
+            },
+            credentials: 'include',
+            body: JSON.stringify({ password }),
           })
           
           if (response.ok) {
             set({ 
               isAuthenticated: true, 
-              token: password, 
+              token: COOKIE_AUTH_TOKEN,
               isLoading: false,
               lastAuthCheck: Date.now(),
               error: null
@@ -140,6 +142,17 @@ export const useAuthStore = create<AuthState>()(
       },
       
       logout: () => {
+        void (async () => {
+          try {
+            const apiUrl = await getApiUrl()
+            await fetch(`${apiUrl}/api/auth/logout`, {
+              method: 'POST',
+              credentials: 'include',
+            })
+          } catch (error) {
+            console.error('Logout request failed:', error)
+          }
+        })()
         set({ 
           isAuthenticated: false, 
           token: null, 
@@ -154,6 +167,10 @@ export const useAuthStore = create<AuthState>()(
         // If already checking, return current auth state
         if (isCheckingAuth) {
           return isAuthenticated
+        }
+
+        if (token === AUTH_DISABLED_TOKEN) {
+          return true
         }
 
         // If no token, not authenticated
@@ -174,10 +191,15 @@ export const useAuthStore = create<AuthState>()(
 
           const response = await fetch(`${apiUrl}/api/notebooks`, {
             method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
+            headers: isBearerToken(token)
+              ? {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              : {
+                  'Content-Type': 'application/json'
+                },
+            credentials: 'include',
           })
           
           if (response.ok) {

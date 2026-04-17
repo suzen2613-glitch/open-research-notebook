@@ -1,0 +1,2 @@
+REMOVE FIELD IF EXISTS notebook_type ON TABLE notebook;
+REMOVE FIELD IF EXISTS theme_color ON TABLE notebook;

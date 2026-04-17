@@ -20,6 +20,69 @@ uv sync
 make start-all
 ```
 
+For a persistent local dev stack with automatic restart, use the `systemd --user` workflow:
+
+```bash
+# Install and bootstrap user services
+bash system/open-notebook-service.sh bootstrap
+
+# Inspect status / logs
+bash system/open-notebook-service.sh status
+bash system/open-notebook-service.sh logs worker 200
+```
+
+This creates an `open-notebook.target` user service that manages SurrealDB, API, worker, and frontend with restart policies. Generated PDF images are served through the API at `/api/images/...`.
+
+
+## Local System Scripts (Custom Local Workflow)
+
+For this local machine, there is also a lightweight script-based workflow under `system/` that manages the full Open Notebook stack plus import helpers. This is useful when you want a single command to start/stop everything without manually managing each process.
+
+### Available Scripts
+
+```bash
+# Install / manage systemd user services
+bash system/open-notebook-service.sh install
+bash system/open-notebook-service.sh enable
+bash system/open-notebook-service.sh start
+bash system/open-notebook-service.sh status
+bash system/open-notebook-service.sh logs api
+
+# Start all local services
+bash system/open-notebook-up.sh
+
+# Stop all local services
+bash system/open-notebook-down.sh
+
+# Check ports, health, and logs
+bash system/open-notebook-status.sh
+
+# Import a Zotero collection by collection ID
+bash system/open-notebook-import-zotero.sh <collection_id> [notebook_id]
+
+# Import a single PDF through the Marker -> Source pipeline
+bash system/open-notebook-import-pdf.sh <pdf_path> [title] [notebook_id]
+```
+
+### What `open-notebook-up.sh` Starts
+
+- SurrealDB (`127.0.0.1:8000`)
+- FastAPI backend (`0.0.0.0:5055`)
+- background worker
+- Next.js frontend (`3000`)
+- image files via the API / frontend proxy (`/api/images/...`)
+
+### Notes
+
+- Marker is **not** a long-running service. It runs on demand during PDF / Zotero imports.
+- The recommended guard/auto-restart solution is `systemd --user` via `system/open-notebook-service.sh`.
+- `system/open-notebook-up.sh`, `down.sh`, and `status.sh` automatically use `systemd` when units are installed; otherwise they fall back to the old `nohup + pidfile` mode.
+- Logs are written under `/tmp/open-notebook/`.
+- PID files are written under `/tmp/open-notebook/pids/`.
+- `systemd` logs are available through `journalctl --user -u open-notebook-<service>.service`.
+- If services were started manually before these scripts existed, run `bash system/open-notebook-down.sh` once, then switch to the `systemd` workflow.
+- These scripts are intended for this machine's local workflow and may contain machine-specific paths.
+
 ## Development Workflows
 
 ### When to Use What?

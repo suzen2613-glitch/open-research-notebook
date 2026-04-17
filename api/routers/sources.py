@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -14,7 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, Response
 from loguru import logger
-from surreal_commands import execute_command_sync, submit_command
+from surreal_commands import submit_command
 
 from api.command_service import CommandService
 from api.models import (
@@ -24,6 +25,7 @@ from api.models import (
     SourceCreate,
     SourceInsightResponse,
     SourceListResponse,
+    SourceReferenceConnectionsResponse,
     SourceResponse,
     SourceStatusResponse,
     SourceUpdate,
@@ -31,34 +33,69 @@ from api.models import (
 from commands.source_commands import SourceProcessingInput
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import Notebook, Source
+from open_notebook.domain.notebook import Notebook, Source, SourceInsight
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import InvalidInputError
+from open_notebook.services.source_ingest import SourceIngestError, ingest_source_content
+from open_notebook.services.source_references import build_source_reference_connections
 
 router = APIRouter()
 
 
+def sanitize_uploaded_filename(original_filename: str) -> str:
+    """Normalize user-provided filenames to a safe local filename."""
+    candidate = original_filename.replace("\\", "/").strip()
+    filename = Path(candidate).name
+    filename = re.sub(r"[\x00-\x1f\x7f]+", "", filename)
+    filename = re.sub(r"[^A-Za-z0-9._() -]+", "_", filename).strip(" .")
+
+    if not filename or filename in {".", ".."}:
+        raise ValueError("Invalid filename provided")
+
+    return filename
+
+
 def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
     """Generate unique filename like Streamlit app (append counter if file exists)."""
-    file_path = Path(upload_folder)
+    file_path = Path(upload_folder).resolve()
     file_path.mkdir(parents=True, exist_ok=True)
+    safe_filename = sanitize_uploaded_filename(original_filename)
 
     # Split filename and extension
-    stem = Path(original_filename).stem
-    suffix = Path(original_filename).suffix
+    stem = Path(safe_filename).stem
+    suffix = Path(safe_filename).suffix
 
     # Check if file exists and generate unique name
     counter = 0
     while True:
         if counter == 0:
-            new_filename = original_filename
+            new_filename = safe_filename
         else:
             new_filename = f"{stem} ({counter}){suffix}"
 
-        full_path = file_path / new_filename
+        full_path = (file_path / new_filename).resolve()
+        if file_path not in full_path.parents:
+            raise ValueError("Invalid upload filename")
         if not full_path.exists():
             return str(full_path)
         counter += 1
+
+
+def validate_server_upload_path(file_path: str) -> str:
+    """Only allow server-side file paths that stay within the uploads directory."""
+    safe_root = Path(UPLOADS_FOLDER).resolve()
+    resolved_path = Path(file_path).resolve()
+
+    if safe_root not in resolved_path.parents:
+        raise HTTPException(
+            status_code=400,
+            detail="file_path must point to a file inside the uploads directory",
+        )
+
+    if not resolved_path.exists() or not resolved_path.is_file():
+        raise HTTPException(status_code=400, detail="file_path does not exist on server")
+
+    return str(resolved_path)
 
 
 async def save_uploaded_file(upload_file: UploadFile) -> str:
@@ -185,7 +222,7 @@ async def get_sources(
 
             # Query sources for specific notebook - include command field with FETCH
             query = f"""
-                SELECT id, asset, created, title, updated, topics, command,
+                SELECT id, asset, created, title, updated, topics, command, status, error_message,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
                 (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
                 FROM (select value in from reference where out=$notebook_id)
@@ -204,7 +241,7 @@ async def get_sources(
         else:
             # Query all sources - include command field with FETCH
             query = f"""
-                SELECT id, asset, created, title, updated, topics, command,
+                SELECT id, asset, created, title, updated, topics, command, status, error_message,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
                 (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
                 FROM source
@@ -220,13 +257,14 @@ async def get_sources(
         for row in result:
             command = row.get("command")
             command_id = None
-            status = None
+            status = row.get("status")
             processing_info = None
+            error_message = row.get("error_message")
 
             # Extract status from fetched command object (already resolved by FETCH)
             if command and isinstance(command, dict):
                 command_id = str(command.get("id")) if command.get("id") else None
-                status = command.get("status")
+                status = row.get("status") or command.get("status")
                 # Extract execution metadata from nested result structure
                 result_data = command.get("result")
                 execution_metadata = (
@@ -237,12 +275,15 @@ async def get_sources(
                 processing_info = {
                     "started_at": execution_metadata.get("started_at"),
                     "completed_at": execution_metadata.get("completed_at"),
-                    "error": command.get("error_message"),
+                    "error": row.get("error_message") or command.get("error_message"),
                 }
             elif command:
                 # Command exists but FETCH failed to resolve it (broken reference)
                 command_id = str(command)
-                status = "unknown"
+                status = row.get("status") or "unknown"
+                processing_info = {"error": row.get("error_message")}
+            elif row.get("status") or row.get("error_message"):
+                processing_info = {"error": row.get("error_message")}
 
             response_list.append(
                 SourceListResponse(
@@ -266,6 +307,7 @@ async def get_sources(
                     command_id=command_id,
                     status=status,
                     processing_info=processing_info,
+                    error_message=error_message,
                 )
             )
 
@@ -290,14 +332,6 @@ async def create_source(
     file_path = None
 
     try:
-        # Verify all specified notebooks exist (backward compatibility support)
-        for notebook_id in source_data.notebooks or []:
-            notebook = await Notebook.get(notebook_id)
-            if not notebook:
-                raise HTTPException(
-                    status_code=404, detail=f"Notebook {notebook_id} not found"
-                )
-
         # Handle file upload if provided
         if upload_file and source_data.type == "upload":
             try:
@@ -318,8 +352,10 @@ async def create_source(
                 )
             content_state["url"] = source_data.url
         elif source_data.type == "upload":
-            # Use uploaded file path or provided file_path (backward compatibility)
-            final_file_path = file_path or source_data.file_path
+            # Backward compatibility: allow server-managed uploads only.
+            final_file_path = file_path
+            if not final_file_path and source_data.file_path:
+                final_file_path = validate_server_upload_path(source_data.file_path)
             if not final_file_path:
                 raise HTTPException(
                     status_code=400,
@@ -339,191 +375,61 @@ async def create_source(
                 detail="Invalid source type. Must be link, upload, or text",
             )
 
-        # Validate transformations exist
-        transformation_ids = source_data.transformations or []
-        for trans_id in transformation_ids:
-            transformation = await Transformation.get(trans_id)
-            if not transformation:
-                raise HTTPException(
-                    status_code=404, detail=f"Transformation {trans_id} not found"
-                )
+        ingest_result = await ingest_source_content(
+            title=source_data.title,
+            notebook_ids=source_data.notebooks or [],
+            content_state=content_state,
+            transformation_ids=source_data.transformations or [],
+            embed=source_data.embed,
+            async_processing=source_data.async_processing,
+        )
+        result_source = ingest_result.source
 
-        # Branch based on processing mode
         if source_data.async_processing:
-            # ASYNC PATH: Create source record first, then queue command
-            logger.info("Using async processing path")
-
-            # Create minimal source record - let SurrealDB generate the ID
-            source = Source(
-                title=source_data.title or "Processing...",
-                topics=[],
+            return SourceResponse(
+                id=result_source.id or "",
+                title=result_source.title,
+                topics=result_source.topics or [],
+                asset=None,
+                full_text=None,
+                embedded=False,
+                embedded_chunks=0,
+                created=str(result_source.created),
+                updated=str(result_source.updated),
+                command_id=ingest_result.command_id,
+                status=ingest_result.status,
+                processing_info=ingest_result.processing_info,
+                error_message=result_source.error_message,
             )
-            await source.save()
 
-            # Add source to notebooks immediately so it appears in the UI
-            # The source_graph will skip adding duplicates
-            for notebook_id in source_data.notebooks or []:
-                await source.add_to_notebook(notebook_id)
+        embedded_chunks = await result_source.get_embedded_chunks()
+        return SourceResponse(
+            id=result_source.id or "",
+            title=result_source.title,
+            topics=result_source.topics or [],
+            asset=AssetModel(
+                file_path=result_source.asset.file_path
+                if result_source.asset
+                else None,
+                url=result_source.asset.url if result_source.asset else None,
+            )
+            if result_source.asset
+            else None,
+            full_text=result_source.full_text,
+            embedded=embedded_chunks > 0,
+            embedded_chunks=embedded_chunks,
+            created=str(result_source.created),
+            updated=str(result_source.updated),
+            status=result_source.status,
+            processing_info=await result_source.get_processing_progress(),
+            error_message=result_source.error_message,
+        )
 
-            try:
-                # Import command modules to ensure they're registered
-                import commands.source_commands  # noqa: F401
-
-                # Submit command for background processing
-                command_input = SourceProcessingInput(
-                    source_id=str(source.id),
-                    content_state=content_state,
-                    notebook_ids=source_data.notebooks,
-                    transformations=transformation_ids,
-                    embed=source_data.embed,
-                )
-
-                command_id = await CommandService.submit_command_job(
-                    "open_notebook",  # app name
-                    "process_source",  # command name
-                    command_input.model_dump(),
-                )
-
-                logger.info(f"Submitted async processing command: {command_id}")
-
-                # Update source with command reference immediately
-                # command_id already includes 'command:' prefix
-                source.command = ensure_record_id(command_id)
-                await source.save()
-
-                # Return source with command info
-                return SourceResponse(
-                    id=source.id or "",
-                    title=source.title,
-                    topics=source.topics or [],
-                    asset=None,  # Will be populated after processing
-                    full_text=None,  # Will be populated after processing
-                    embedded=False,  # Will be updated after processing
-                    embedded_chunks=0,
-                    created=str(source.created),
-                    updated=str(source.updated),
-                    command_id=command_id,
-                    status="new",
-                    processing_info={"async": True, "queued": True},
-                )
-
-            except Exception as e:
-                logger.error(f"Failed to submit async processing command: {e}")
-                # Clean up source record on command submission failure
-                try:
-                    await source.delete()
-                except Exception:
-                    pass
-                # Clean up uploaded file if we created it
-                if file_path and upload_file:
-                    try:
-                        os.unlink(file_path)
-                    except Exception:
-                        pass
-                raise HTTPException(
-                    status_code=500, detail=f"Failed to queue processing: {str(e)}"
-                )
-
-        else:
-            # SYNC PATH: Execute synchronously using execute_command_sync
-            logger.info("Using sync processing path")
-
-            try:
-                # Import command modules to ensure they're registered
-                import commands.source_commands  # noqa: F401
-
-                # Create source record - let SurrealDB generate the ID
-                source = Source(
-                    title=source_data.title or "Processing...",
-                    topics=[],
-                )
-                await source.save()
-
-                # Add source to notebooks immediately so it appears in the UI
-                # The source_graph will skip adding duplicates
-                for notebook_id in source_data.notebooks or []:
-                    await source.add_to_notebook(notebook_id)
-
-                # Execute command synchronously
-                command_input = SourceProcessingInput(
-                    source_id=str(source.id),
-                    content_state=content_state,
-                    notebook_ids=source_data.notebooks,
-                    transformations=transformation_ids,
-                    embed=source_data.embed,
-                )
-
-                # Run in thread pool to avoid blocking the event loop
-                # execute_command_sync uses asyncio.run() internally which can't
-                # be called from an already-running event loop (FastAPI)
-                result = await asyncio.to_thread(
-                    execute_command_sync,
-                    "open_notebook",  # app name
-                    "process_source",  # command name
-                    command_input.model_dump(),
-                    timeout=300,  # 5 minute timeout for sync processing
-                )
-
-                if not result.is_success():
-                    logger.error(f"Sync processing failed: {result.error_message}")
-                    # Clean up source record
-                    try:
-                        await source.delete()
-                    except Exception:
-                        pass
-                    # Clean up uploaded file if we created it
-                    if file_path and upload_file:
-                        try:
-                            os.unlink(file_path)
-                        except Exception:
-                            pass
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Processing failed: {result.error_message}",
-                    )
-
-                # Get the processed source
-                if not source.id:
-                    raise HTTPException(status_code=500, detail="Source ID is missing")
-                processed_source = await Source.get(source.id)
-                if not processed_source:
-                    raise HTTPException(
-                        status_code=500, detail="Processed source not found"
-                    )
-
-                embedded_chunks = await processed_source.get_embedded_chunks()
-                return SourceResponse(
-                    id=processed_source.id or "",
-                    title=processed_source.title,
-                    topics=processed_source.topics or [],
-                    asset=AssetModel(
-                        file_path=processed_source.asset.file_path
-                        if processed_source.asset
-                        else None,
-                        url=processed_source.asset.url
-                        if processed_source.asset
-                        else None,
-                    )
-                    if processed_source.asset
-                    else None,
-                    full_text=processed_source.full_text,
-                    embedded=embedded_chunks > 0,
-                    embedded_chunks=embedded_chunks,
-                    created=str(processed_source.created),
-                    updated=str(processed_source.updated),
-                    # No command_id or status for sync processing (legacy behavior)
-                )
-
-            except Exception as e:
-                logger.error(f"Sync processing failed: {e}")
-                # Clean up uploaded file if we created it
-                if file_path and upload_file:
-                    try:
-                        os.unlink(file_path)
-                    except Exception:
-                        pass
-                raise
-
+    except SourceIngestError as e:
+        logger.error(f"Source ingest failed but source was retained: {e}")
+        if isinstance(e.__cause__, ValueError):
+            raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error creating source: {str(e)}")
     except HTTPException:
         # Clean up uploaded file on HTTP exceptions if we created it
         if file_path and upload_file:
@@ -548,6 +454,8 @@ async def create_source(
                 os.unlink(file_path)
             except Exception:
                 pass
+        if isinstance(e, ValueError):
+            raise HTTPException(status_code=400, detail=str(e))
         raise HTTPException(status_code=500, detail=f"Error creating source: {str(e)}")
 
 
@@ -616,6 +524,15 @@ async def get_source(source_id: str):
             except Exception as e:
                 logger.warning(f"Failed to get status for source {source_id}: {e}")
                 status = "unknown"
+        elif source.status or source.error_message:
+            status = source.status
+            processing_info = {
+                "status": source.status,
+                "started_at": None,
+                "completed_at": None,
+                "error": source.error_message,
+                "result": None,
+            }
 
         embedded_chunks = await source.get_embedded_chunks()
 
@@ -648,6 +565,7 @@ async def get_source(source_id: str):
             command_id=str(source.command) if source.command else None,
             status=status,
             processing_info=processing_info,
+            error_message=source.error_message,
             # Notebook associations
             notebooks=notebook_ids,
         )
@@ -688,6 +606,30 @@ async def download_source_file(source_id: str):
         raise HTTPException(status_code=500, detail="Failed to download source file")
 
 
+@router.get("/sources/{source_id}/references", response_model=SourceReferenceConnectionsResponse)
+async def get_source_reference_connections(
+    source_id: str,
+    notebook_id: Optional[str] = Query(None, description="Optional notebook scope override"),
+):
+    """Extract reference connections for a source within its notebook scope."""
+    try:
+        connections = await build_source_reference_connections(
+            source_id,
+            notebook_id=notebook_id,
+        )
+        return SourceReferenceConnectionsResponse(**connections)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching source references for {source_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching source references: {str(e)}",
+        )
+
+
 @router.get("/sources/{source_id}/status", response_model=SourceStatusResponse)
 async def get_source_status(source_id: str):
     """Get processing status for a source."""
@@ -699,6 +641,31 @@ async def get_source_status(source_id: str):
 
         # Check if this is a legacy source (no command)
         if not source.command:
+            if source.status:
+                if source.status == "completed":
+                    message = "Source processing completed successfully"
+                elif source.status == "failed":
+                    message = source.error_message or "Source processing failed"
+                elif source.status == "running":
+                    message = "Source processing in progress"
+                elif source.status in {"queued", "new"}:
+                    message = "Source processing queued"
+                else:
+                    message = f"Source processing status: {source.status}"
+
+                return SourceStatusResponse(
+                    status=source.status,
+                    message=message,
+                    processing_info={
+                        "status": source.status,
+                        "started_at": None,
+                        "completed_at": None,
+                        "error": source.error_message,
+                        "result": None,
+                    },
+                    command_id=None,
+                    error_message=source.error_message,
+                )
             return SourceStatusResponse(
                 status=None,
                 message="Legacy source (completed before async processing)",
@@ -715,10 +682,14 @@ async def get_source_status(source_id: str):
             if status == "completed":
                 message = "Source processing completed successfully"
             elif status == "failed":
-                message = "Source processing failed"
+                message = (
+                    source.error_message
+                    or (processing_info or {}).get("error")
+                    or "Source processing failed"
+                )
             elif status == "running":
                 message = "Source processing in progress"
-            elif status == "queued":
+            elif status in {"queued", "new"}:
                 message = "Source processing queued"
             elif status == "unknown":
                 message = "Source processing status unknown"
@@ -730,6 +701,8 @@ async def get_source_status(source_id: str):
                 message=message,
                 processing_info=processing_info,
                 command_id=str(source.command) if source.command else None,
+                error_message=source.error_message
+                or ((processing_info or {}).get("error") if processing_info else None),
             )
 
         except Exception as e:
@@ -739,6 +712,7 @@ async def get_source_status(source_id: str):
                 message="Failed to retrieve processing status",
                 processing_info=None,
                 command_id=str(source.command) if source.command else None,
+                error_message=source.error_message,
             )
 
     except HTTPException:
@@ -763,6 +737,12 @@ async def update_source(source_id: str, source_update: SourceUpdate):
             source.title = source_update.title
         if source_update.topics is not None:
             source.topics = source_update.topics
+        if source_update.asset is not None:
+            source.asset = Asset(
+                file_path=source_update.asset.file_path, url=source_update.asset.url
+            )
+        if source_update.full_text is not None:
+            source.full_text = source_update.full_text
 
         await source.save()
 
@@ -782,6 +762,9 @@ async def update_source(source_id: str, source_update: SourceUpdate):
             embedded_chunks=embedded_chunks,
             created=str(source.created),
             updated=str(source.updated),
+            status=source.status,
+            processing_info=await source.get_processing_progress(),
+            error_message=source.error_message,
         )
     except HTTPException:
         raise
@@ -874,6 +857,8 @@ async def retry_source_processing(source_id: str):
 
             # Update source with new command ID
             source.command = ensure_record_id(f"command:{command_id}")
+            source.status = "queued"
+            source.error_message = None
             await source.save()
 
             # Get current embedded chunks count
@@ -898,6 +883,7 @@ async def retry_source_processing(source_id: str):
                 command_id=command_id,
                 status="queued",
                 processing_info={"retry": True, "queued": True},
+                error_message=None,
             )
 
         except Exception as e:
@@ -950,6 +936,12 @@ async def get_source_insights(source_id: str):
                 source_id=source_id,
                 insight_type=insight.insight_type,
                 content=insight.content,
+                transformation_id=insight.transformation_id,
+                prompt_title=insight.prompt_title,
+                can_refresh=bool(
+                    (insight.prompt_snapshot and insight.prompt_title)
+                    or insight.transformation_id
+                ),
                 created=str(insight.created),
                 updated=str(insight.updated),
             )
@@ -983,19 +975,34 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
 
-        # Validate transformation exists
-        transformation = await Transformation.get(request.transformation_id)
-        if not transformation:
-            raise HTTPException(status_code=404, detail="Transformation not found")
+        transformation_id = request.transformation_id
+        insight_title = request.title
+        prompt_override = request.prompt
+
+        if transformation_id:
+            transformation = await Transformation.get(transformation_id)
+            if not transformation:
+                raise HTTPException(status_code=404, detail="Transformation not found")
+            insight_title = transformation.title
+            prompt_override = transformation.prompt
+        elif not insight_title or not prompt_override:
+            raise HTTPException(
+                status_code=400,
+                detail="Custom insights require both title and prompt",
+            )
 
         # Submit transformation as background job (fire-and-forget)
+        command_payload = {
+            "source_id": source_id,
+            "transformation_id": transformation_id,
+            "insight_title": insight_title,
+            "prompt_override": prompt_override,
+            "model_id": request.model_id,
+        }
         command_id = submit_command(
             "open_notebook",
             "run_transformation",
-            {
-                "source_id": source_id,
-                "transformation_id": request.transformation_id,
-            },
+            command_payload,
         )
         logger.info(
             f"Submitted run_transformation command {command_id} for source {source_id}"
@@ -1006,7 +1013,8 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
             status="pending",
             message="Insight generation started",
             source_id=source_id,
-            transformation_id=request.transformation_id,
+            transformation_id=transformation_id,
+            insight_title=insight_title,
             command_id=str(command_id),
         )
 

@@ -14,6 +14,7 @@ import { ModelSelector } from '@/components/common/ModelSelector'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { MarkdownImage } from '@/components/ui/markdown-image'
 
 interface TransformationPlaygroundProps {
   transformations: Transformation[] | undefined
@@ -127,6 +128,14 @@ export function TransformationPlayground({ transformations, selectedTransformati
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
+                          img: ({ src, alt, ...props }) => (
+                            <MarkdownImage
+                              {...props}
+                              src={src}
+                              alt={alt}
+                              className="my-4 max-w-full rounded-md"
+                            />
+                          ),
                           table: ({ children }) => (
                             <div className="my-4 overflow-x-auto">
                               <table className="min-w-full border-collapse border border-border">{children}</table>

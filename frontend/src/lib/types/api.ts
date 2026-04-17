@@ -1,8 +1,13 @@
+export type NotebookType = 'academic' | 'general'
+export type NotebookThemeColor = 'slate' | 'blue' | 'emerald' | 'amber' | 'rose' | 'violet'
+
 export interface NotebookResponse {
   id: string
   name: string
   description: string
   archived: boolean
+  notebook_type: NotebookType
+  theme_color: NotebookThemeColor
   created: string
   updated: string
   source_count: number
@@ -14,6 +19,9 @@ export interface NoteResponse {
   title: string | null
   content: string | null
   note_type: string | null
+  board_column: 'inbox' | 'working' | 'final'
+  source_id?: string | null
+  source_insight_id?: string | null
   created: string
   updated: string
 }
@@ -36,6 +44,7 @@ export interface SourceListResponse {
   command_id?: string
   status?: string
   processing_info?: Record<string, unknown>
+  error_message?: string | null
 }
 
 export interface SourceDetailResponse extends SourceListResponse {
@@ -50,11 +59,37 @@ export interface SourceStatusResponse {
   message: string
   processing_info?: Record<string, unknown>
   command_id?: string
+  error_message?: string | null
+}
+
+export interface SourceReferenceMatchResponse {
+  source_id: string
+  source_title?: string | null
+  raw_reference?: string | null
+  confidence: number
+  notebook_ids: string[]
+}
+
+export interface SourceReferenceCandidateResponse {
+  title?: string | null
+  normalized_title?: string | null
+  raw_reference: string
+}
+
+export interface SourceReferenceConnectionsResponse {
+  source_id: string
+  source_title?: string | null
+  notebook_scope_ids: string[]
+  references_extracted: number
+  citations_in_notebook: SourceReferenceMatchResponse[]
+  cited_by_in_notebook: SourceReferenceMatchResponse[]
+  reference_candidates: SourceReferenceCandidateResponse[]
 }
 
 export interface SettingsResponse {
   default_content_processing_engine_doc?: string
   default_content_processing_engine_url?: string
+  default_pdf_processing_engine?: string
   default_embedding_option?: string
   auto_delete_files?: string
   youtube_preferred_languages?: string[]
@@ -63,12 +98,16 @@ export interface SettingsResponse {
 export interface CreateNotebookRequest {
   name: string
   description?: string
+  notebook_type?: NotebookType
+  theme_color?: NotebookThemeColor
 }
 
 export interface UpdateNotebookRequest {
   name?: string
   description?: string
   archived?: boolean
+  notebook_type?: NotebookType
+  theme_color?: NotebookThemeColor
 }
 
 export interface NotebookDeletePreview {
@@ -86,11 +125,37 @@ export interface NotebookDeleteResponse {
   unlinked_sources: number
 }
 
+export interface DuplicateSourceEntryResponse {
+  source_id: string
+  title?: string | null
+  created: string
+  updated: string
+}
+
+export interface DuplicateSourceGroupResponse {
+  normalized_title: string
+  keep_source_id: string
+  keep_title?: string | null
+  duplicate_count: number
+  duplicates: DuplicateSourceEntryResponse[]
+}
+
+export interface DuplicateCleanupResponse {
+  duplicate_groups: DuplicateSourceGroupResponse[]
+  removed_source_ids: string[]
+  unlinked_source_ids: string[]
+  removed_count: number
+  unlinked_count: number
+}
+
 export interface CreateNoteRequest {
   title?: string
   content: string
   note_type?: string
+  board_column?: 'inbox' | 'working' | 'final'
   notebook_id?: string
+  source_id?: string
+  source_insight_id?: string
 }
 
 export interface CreateSourceRequest {
@@ -115,6 +180,7 @@ export interface UpdateNoteRequest {
   title?: string
   content?: string
   note_type?: string
+  board_column?: 'inbox' | 'working' | 'final'
 }
 
 export interface UpdateSourceRequest {
@@ -155,6 +221,19 @@ export interface SourceChatContextIndicator {
   sources: string[]
   insights: string[]
   notes: string[]
+  evidence?: string[]
+}
+
+export interface SourceEmbeddingResponse {
+  id: string
+  source_id: string
+  order?: number | null
+  section?: string | null
+  char_start?: number | null
+  char_end?: number | null
+  content: string
+  created: string
+  updated: string
 }
 
 export interface SourceChatSessionWithMessages extends SourceChatSession {

@@ -1,4 +1,5 @@
-.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart
+.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart images images-start images-stop images-restart
+.PHONY: daemon-install daemon-bootstrap daemon-start daemon-stop daemon-restart daemon-status daemon-enable daemon-disable daemon-uninstall
 .PHONY: docker-buildx-prepare docker-buildx-clean docker-buildx-reset
 .PHONY: docker-push docker-push-latest docker-release docker-build-local tag export-docs
 
@@ -152,6 +153,18 @@ worker-restart: worker-stop
 	@sleep 2
 	@$(MAKE) worker-start
 
+images: images-start
+
+images-start:
+	@echo "Legacy image server is no longer required. Images are served from /api/images via the API."
+
+images-stop:
+	@echo "No standalone image server to stop."
+
+images-restart: images-stop
+	@sleep 2
+	@$(MAKE) images-start
+
 # === Service Management ===
 start-all:
 	@echo "🚀 Starting Open Notebook (Database + API + Worker + Frontend)..."
@@ -163,11 +176,11 @@ start-all:
 	@sleep 3
 	@echo "⚙️ Starting background worker..."
 	@uv run --env-file .env surreal-commands-worker --import-modules commands &
-	@sleep 2
 	@echo "🌐 Starting Next.js frontend..."
 	@echo "✅ All services started!"
 	@echo "📱 Frontend: http://localhost:3000"
 	@echo "🔗 API: http://localhost:5055"
+	@echo "🖼️ Images: http://localhost:3000/api/images/..."
 	@echo "📚 API Docs: http://localhost:5055/docs"
 	cd frontend && npm run dev
 
@@ -190,6 +203,33 @@ status:
 	@pgrep -f "surreal-commands-worker" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
 	@echo "Next.js Frontend:"
 	@pgrep -f "next dev" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
+
+daemon-install:
+	@bash system/open-notebook-service.sh install
+
+daemon-bootstrap:
+	@bash system/open-notebook-service.sh bootstrap
+
+daemon-start:
+	@bash system/open-notebook-service.sh start
+
+daemon-stop:
+	@bash system/open-notebook-service.sh stop
+
+daemon-restart:
+	@bash system/open-notebook-service.sh restart
+
+daemon-status:
+	@bash system/open-notebook-service.sh status
+
+daemon-enable:
+	@bash system/open-notebook-service.sh enable
+
+daemon-disable:
+	@bash system/open-notebook-service.sh disable
+
+daemon-uninstall:
+	@bash system/open-notebook-service.sh uninstall
 
 # === Documentation Export ===
 export-docs:

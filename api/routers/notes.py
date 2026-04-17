@@ -34,6 +34,9 @@ async def get_notes(
                 title=note.title,
                 content=note.content,
                 note_type=note.note_type,
+                board_column=note.board_column,
+                source_id=note.source_id,
+                source_insight_id=note.source_insight_id,
                 created=str(note.created),
                 updated=str(note.updated),
             )
@@ -77,6 +80,9 @@ async def create_note(note_data: NoteCreate):
             title=title,
             content=note_data.content,
             note_type=note_type,
+            board_column=note_data.board_column or "inbox",
+            source_id=note_data.source_id,
+            source_insight_id=note_data.source_insight_id,
         )
         command_id = await new_note.save()
 
@@ -94,6 +100,9 @@ async def create_note(note_data: NoteCreate):
             title=new_note.title,
             content=new_note.content,
             note_type=new_note.note_type,
+            board_column=new_note.board_column,
+            source_id=new_note.source_id,
+            source_insight_id=new_note.source_insight_id,
             created=str(new_note.created),
             updated=str(new_note.updated),
             command_id=str(command_id) if command_id else None,
@@ -120,6 +129,9 @@ async def get_note(note_id: str):
             title=note.title,
             content=note.content,
             note_type=note.note_type,
+            board_column=note.board_column,
+            source_id=note.source_id,
+            source_insight_id=note.source_insight_id,
             created=str(note.created),
             updated=str(note.updated),
         )
@@ -150,6 +162,8 @@ async def update_note(note_id: str, note_update: NoteUpdate):
                 raise HTTPException(
                     status_code=400, detail="note_type must be 'human' or 'ai'"
                 )
+        if note_update.board_column is not None:
+            note.board_column = note_update.board_column
 
         command_id = await note.save()
 
@@ -158,6 +172,9 @@ async def update_note(note_id: str, note_update: NoteUpdate):
             title=note.title,
             content=note.content,
             note_type=note.note_type,
+            board_column=note.board_column,
+            source_id=note.source_id,
+            source_insight_id=note.source_insight_id,
             created=str(note.created),
             updated=str(note.updated),
             command_id=str(command_id) if command_id else None,

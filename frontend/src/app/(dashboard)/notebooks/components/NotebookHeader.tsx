@@ -1,31 +1,70 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { formatDistanceToNow } from 'date-fns'
+import { Archive, ArchiveRestore, Loader2, StickyNote, Trash2 } from 'lucide-react'
+
 import { NotebookResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Archive, ArchiveRestore, Trash2 } from 'lucide-react'
 import { useUpdateNotebook } from '@/lib/hooks/use-notebooks'
 import { NotebookDeleteDialog } from './NotebookDeleteDialog'
-import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { InlineEdit } from '@/components/common/InlineEdit'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { cn } from '@/lib/utils'
+import { getNotebookThemeClasses, getNotebookTypeLabel } from '@/lib/notebook-appearance'
+
+export interface NotebookOverview {
+  sourceTotal: number
+  sourceProcessing: number
+  sourceFailed: number
+  summaryReady: number
+  summaryMissing: number
+  summaryStale: number
+  wikiReady: number
+  wikiPending: number
+  wikiFailed: number
+  wikiMissing: number
+  wikiStale: number
+  noteTotal: number
+}
 
 interface NotebookHeaderProps {
   notebook: NotebookResponse
+  overview?: NotebookOverview
+  isRefreshing?: boolean
 }
 
-export function NotebookHeader({ notebook }: NotebookHeaderProps) {
+export function NotebookHeader({ notebook, overview, isRefreshing = false }: NotebookHeaderProps) {
   const { t, language } = useTranslation()
   const dfLocale = getDateLocale(language)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  
+
   const updateNotebook = useUpdateNotebook()
+  const isZh = language?.startsWith('zh')
+  const isAcademic = notebook.notebook_type === 'academic'
+  const theme = getNotebookThemeClasses(notebook.theme_color)
+
+  const labels = useMemo(() => ({
+    sources: isZh ? '来源' : 'Sources',
+    summary: isZh ? '总结' : 'Summary',
+    wiki: 'Wiki',
+    notes: isZh ? '笔记' : 'Notes',
+    syncing: isZh ? '后台同步中' : 'Background sync',
+    processing: isZh ? '处理中' : 'Processing',
+    failed: isZh ? '失败' : 'Failed',
+    summaryMissing: isZh ? '待补总结' : 'Summaries missing',
+    summaryStale: isZh ? '总结待刷新' : 'Summaries stale',
+    wikiPending: isZh ? 'Wiki 生成中' : 'Wiki pending',
+    wikiFailed: isZh ? 'Wiki 失败' : 'Wiki failed',
+    wikiMissing: isZh ? '待建 Wiki' : 'Wiki missing',
+    wikiStale: isZh ? 'Wiki 待刷新' : 'Wiki stale',
+  }), [isZh])
 
   const handleUpdateName = async (name: string) => {
     if (!name || name === notebook.name) return
-    
+
     await updateNotebook.mutateAsync({
       id: notebook.id,
       data: { name }
@@ -34,7 +73,7 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
 
   const handleUpdateDescription = async (description: string) => {
     if (description === notebook.description) return
-    
+
     await updateNotebook.mutateAsync({
       id: notebook.id,
       data: { description: description || undefined }
@@ -50,10 +89,11 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
 
   return (
     <>
-      <div className="border-b pb-6">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1">
+      <div className={cn('relative overflow-hidden rounded-2xl border p-5', theme.card)}>
+        <div className={cn('absolute inset-y-0 left-0 w-1.5', theme.accent)} />
+        <div className="space-y-4 pl-2">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
               <InlineEdit
                 id="notebook-name"
                 name="notebook-name"
@@ -63,24 +103,27 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
                 inputClassName="text-2xl font-bold"
                 placeholder={t.notebooks.namePlaceholder}
               />
-              {notebook.archived && (
-                <Badge variant="secondary">{t.notebooks.archived}</Badge>
+              <Badge variant="secondary" className={cn('border', theme.badge)}>
+                {getNotebookTypeLabel(notebook.notebook_type, language)}
+              </Badge>
+              {notebook.archived && <Badge variant="secondary">{t.notebooks.archived}</Badge>}
+              {isRefreshing && (
+                <Badge variant="outline" className="gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {labels.syncing}
+                </Badge>
               )}
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleArchiveToggle}
-              >
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={handleArchiveToggle}>
                 {notebook.archived ? (
                   <>
-                    <ArchiveRestore className="h-4 w-4 mr-2" />
+                    <ArchiveRestore className="mr-2 h-4 w-4" />
                     {t.notebooks.unarchive}
                   </>
                 ) : (
                   <>
-                    <Archive className="h-4 w-4 mr-2" />
+                    <Archive className="mr-2 h-4 w-4" />
                     {t.notebooks.archive}
                   </>
                 )}
@@ -91,12 +134,12 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
                 onClick={() => setShowDeleteDialog(true)}
                 className="text-red-600 hover:text-red-700"
               >
-                <Trash2 className="h-4 w-4 mr-2" />
+                <Trash2 className="mr-2 h-4 w-4" />
                 {t.common.delete}
               </Button>
             </div>
           </div>
-          
+
           <InlineEdit
             id="notebook-description"
             name="notebook-description"
@@ -108,9 +151,56 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
             multiline
             emptyText={t.notebooks.addDescription}
           />
-          
+
+          {overview && (
+            <div className="flex flex-wrap items-center gap-2">
+              {isAcademic ? (
+                <>
+                  <Badge variant="secondary">{labels.sources} {overview.sourceTotal}</Badge>
+                  <Badge variant="secondary">{labels.summary} {overview.summaryReady}/{overview.sourceTotal}</Badge>
+                  <Badge variant="secondary">{labels.wiki} {overview.wikiReady}/{overview.sourceTotal}</Badge>
+                  <Badge variant="secondary">{labels.notes} {overview.noteTotal}</Badge>
+                </>
+              ) : (
+                <Badge variant="secondary" className="gap-1.5">
+                  <StickyNote className="h-3.5 w-3.5" />
+                  {labels.notes} {overview.noteTotal}
+                </Badge>
+              )}
+
+              {isAcademic && overview.sourceProcessing > 0 && (
+                <Badge variant="outline">{overview.sourceProcessing} {labels.processing}</Badge>
+              )}
+              {isAcademic && overview.sourceFailed > 0 && (
+                <Badge variant="destructive">{overview.sourceFailed} {labels.failed}</Badge>
+              )}
+              {isAcademic && overview.summaryMissing > 0 && (
+                <Badge variant="outline">{overview.summaryMissing} {labels.summaryMissing}</Badge>
+              )}
+              {isAcademic && overview.summaryStale > 0 && (
+                <Badge variant="outline" className="border-amber-300 text-amber-700">
+                  {overview.summaryStale} {labels.summaryStale}
+                </Badge>
+              )}
+              {isAcademic && overview.wikiPending > 0 && (
+                <Badge variant="outline">{overview.wikiPending} {labels.wikiPending}</Badge>
+              )}
+              {isAcademic && overview.wikiFailed > 0 && (
+                <Badge variant="destructive">{overview.wikiFailed} {labels.wikiFailed}</Badge>
+              )}
+              {isAcademic && overview.wikiMissing > 0 && (
+                <Badge variant="outline">{overview.wikiMissing} {labels.wikiMissing}</Badge>
+              )}
+              {isAcademic && overview.wikiStale > 0 && (
+                <Badge variant="outline" className="border-amber-300 text-amber-700">
+                  {overview.wikiStale} {labels.wikiStale}
+                </Badge>
+              )}
+            </div>
+          )}
+
           <div className="text-sm text-muted-foreground">
-            {t.common.created.replace('{time}', formatDistanceToNow(new Date(notebook.created), { addSuffix: true, locale: dfLocale }))} • 
+            {t.common.created.replace('{time}', formatDistanceToNow(new Date(notebook.created), { addSuffix: true, locale: dfLocale }))} •
             {t.common.updated.replace('{time}', formatDistanceToNow(new Date(notebook.updated), { addSuffix: true, locale: dfLocale }))}
           </div>
         </div>

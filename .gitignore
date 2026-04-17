@@ -5,6 +5,8 @@ data/
 .uploads/
 sqlite-db/
 surreal-data/
+surreal_data/
+images/
 docker.env
 notebook_data/
 # Python-specific
@@ -135,6 +137,9 @@ specs/
 
 .playwright-mcp/
 
+.codex/
+.mcp.json
+history.txt
 
 
 *.local.yml

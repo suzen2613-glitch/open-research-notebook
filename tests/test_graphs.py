@@ -144,6 +144,129 @@ class TestTransformationGraph:
         with pytest.raises(AssertionError, match="No content to transform"):
             await run_transformation(state, config)
 
+    @pytest.mark.asyncio
+    async def test_run_transformation_applies_default_prompt(self, monkeypatch):
+        """Test transformation prepends default instructions from the database."""
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock
+
+        import open_notebook.graphs.transformation as transformation_module
+
+        captured: dict[str, str] = {}
+
+        async def fake_provision_langchain_model(*args, **kwargs):
+            class DummyChain:
+                async def ainvoke(self, payload):
+                    captured["system_prompt"] = payload[0].content
+                    return SimpleNamespace(content="Summarized output")
+
+            return DummyChain()
+
+        monkeypatch.setattr(
+            transformation_module.DefaultPrompts,
+            "get_instance",
+            AsyncMock(
+                return_value=SimpleNamespace(
+                    transformation_instructions="GLOBAL RULES"
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            transformation_module,
+            "provision_langchain_model",
+            fake_provision_langchain_model,
+        )
+        monkeypatch.setattr(
+            transformation_module, "extract_text_content", lambda content: content
+        )
+        monkeypatch.setattr(
+            transformation_module, "clean_thinking_content", lambda content: content
+        )
+
+        mock_transformation = MagicMock()
+        mock_transformation.prompt = "LOCAL PROMPT"
+        mock_transformation.title = "Paper Analysis"
+
+        result = await transformation_module.run_transformation(
+            {
+                "input_text": "Paper text",
+                "transformation": mock_transformation,
+                "source": None,
+            },
+            {"configurable": {"model_id": "model:test"}},
+        )
+
+        assert result["output"] == "Summarized output"
+        assert "GLOBAL RULES" in captured["system_prompt"]
+        assert "LOCAL PROMPT" in captured["system_prompt"]
+        assert captured["system_prompt"].endswith("# INPUT")
+
+    @pytest.mark.asyncio
+    async def test_run_transformation_stores_prompt_metadata(self, monkeypatch):
+        """Test transformation persists prompt metadata with the generated insight."""
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        import open_notebook.graphs.transformation as transformation_module
+        from open_notebook.domain.notebook import Source
+
+        async def fake_provision_langchain_model(*args, **kwargs):
+            class DummyChain:
+                async def ainvoke(self, payload):
+                    return SimpleNamespace(content="Summarized output")
+
+            return DummyChain()
+
+        monkeypatch.setattr(
+            transformation_module.DefaultPrompts,
+            "get_instance",
+            AsyncMock(return_value=SimpleNamespace(transformation_instructions="")),
+        )
+        monkeypatch.setattr(
+            transformation_module,
+            "provision_langchain_model",
+            fake_provision_langchain_model,
+        )
+        monkeypatch.setattr(
+            transformation_module, "extract_text_content", lambda content: content
+        )
+        monkeypatch.setattr(
+            transformation_module, "clean_thinking_content", lambda content: content
+        )
+
+        source = Source(id="source:test", title="Test Source", topics=[])
+        captured: dict[str, object] = {}
+
+        async def fake_add_insight(self, insight_type, content, **kwargs):
+            captured["insight_type"] = insight_type
+            captured["content"] = content
+            captured["kwargs"] = kwargs
+
+        monkeypatch.setattr(Source, "add_insight", fake_add_insight)
+
+        await transformation_module.run_transformation(
+            {
+                "input_text": "Paper text",
+                "source": source,
+                "transformation": SimpleNamespace(
+                    id="transformation:test",
+                    title="Paper Analysis",
+                    prompt="LOCAL PROMPT",
+                ),
+            },
+            {"configurable": {"model_id": "model:test"}},
+        )
+
+        assert captured == {
+            "insight_type": "Paper Analysis",
+            "content": "Summarized output",
+            "kwargs": {
+                "transformation_id": "transformation:test",
+                "prompt_title": "Paper Analysis",
+                "prompt_snapshot": "LOCAL PROMPT",
+            },
+        }
+
     def test_transformation_graph_compilation(self):
         """Test that transformation graph compiles correctly."""
         assert transformation_graph is not None

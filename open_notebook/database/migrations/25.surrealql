@@ -1,0 +1,2 @@
+DEFINE FIELD IF NOT EXISTS status ON TABLE source TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS error_message ON TABLE source TYPE option<string>;

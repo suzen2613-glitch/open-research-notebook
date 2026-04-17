@@ -1,0 +1,11 @@
+-- Migration 22 down: remove canonical concept/question registries and source relations
+
+REMOVE INDEX IF EXISTS idx_concept_name ON TABLE concept;
+REMOVE INDEX IF EXISTS idx_question_name ON TABLE question;
+REMOVE INDEX IF EXISTS idx_source_relation_source ON TABLE source_relation;
+REMOVE INDEX IF EXISTS idx_source_relation_target ON TABLE source_relation;
+REMOVE INDEX IF EXISTS idx_source_relation_wiki_card ON TABLE source_relation;
+
+REMOVE TABLE IF EXISTS source_relation;
+REMOVE TABLE IF EXISTS question;
+REMOVE TABLE IF EXISTS concept;

@@ -1,3 +1,4 @@
+import { getStoredBearerToken } from '@/lib/auth'
 import apiClient from './client'
 import {
   SourceChatSession,
@@ -47,21 +48,7 @@ export const sourceChatApi = {
 
   // Messaging with streaming
   sendMessage: (sourceId: string, sessionId: string, data: SendMessageRequest) => {
-    // Get auth token using the same logic as apiClient interceptor
-    let token = null
-    if (typeof window !== 'undefined') {
-      const authStorage = localStorage.getItem('auth-storage')
-      if (authStorage) {
-        try {
-          const { state } = JSON.parse(authStorage)
-          if (state?.token) {
-            token = state.token
-          }
-        } catch (error) {
-          console.error('Error parsing auth storage:', error)
-        }
-      }
-    }
+    const token = getStoredBearerToken()
 
     // Use relative URL to leverage Next.js rewrites
     // This works both in dev (Next.js proxy) and production (Docker network)
@@ -74,7 +61,8 @@ export const sourceChatApi = {
         'Content-Type': 'application/json',
         ...(token && { 'Authorization': `Bearer ${token}` })
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      credentials: 'include',
     }).then(response => {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)

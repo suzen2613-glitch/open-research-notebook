@@ -1,4 +1,5 @@
 import axios, { AxiosResponse } from 'axios'
+import { getStoredBearerToken } from '@/lib/auth'
 import { getApiUrl } from '@/lib/config'
 
 // API client with runtime-configurable base URL
@@ -12,7 +13,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: false,
+  withCredentials: true,
 })
 
 // Request interceptor to add base URL and auth header
@@ -23,18 +24,9 @@ apiClient.interceptors.request.use(async (config) => {
     config.baseURL = `${apiUrl}/api`
   }
 
-  if (typeof window !== 'undefined') {
-    const authStorage = localStorage.getItem('auth-storage')
-    if (authStorage) {
-      try {
-        const { state } = JSON.parse(authStorage)
-        if (state?.token) {
-          config.headers.Authorization = `Bearer ${state.token}`
-        }
-      } catch (error) {
-        console.error('Error parsing auth storage:', error)
-      }
-    }
+  const bearerToken = getStoredBearerToken()
+  if (bearerToken) {
+    config.headers.Authorization = `Bearer ${bearerToken}`
   }
 
   // Handle FormData vs JSON content types

@@ -2,6 +2,7 @@
 
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { NoteEditorDialog } from '@/app/(dashboard)/notebooks/components/NoteEditorDialog'
+import { SourceEvidenceDialog } from '@/components/source/SourceEvidenceDialog'
 import { SourceInsightDialog } from '@/components/source/SourceInsightDialog'
 import { SourceDialog } from '@/components/source/SourceDialog'
 
@@ -15,6 +16,7 @@ import { SourceDialog } from '@/components/source/SourceDialog'
  * - source: Source detail modal
  * - note: Note editor modal
  * - insight: Source insight modal
+ * - evidence: Source evidence excerpt modal
  */
 export function ModalProvider() {
   const { modalType, modalId, closeModal } = useModalManager()
@@ -47,6 +49,14 @@ export function ModalProvider() {
           if (!open) closeModal()
         }}
         insight={modalId ? { id: modalId, insight_type: '', content: '' } : undefined}
+      />
+
+      <SourceEvidenceDialog
+        open={modalType === 'evidence'}
+        onOpenChange={(open) => {
+          if (!open) closeModal()
+        }}
+        embeddingId={modalId}
       />
     </>
   )

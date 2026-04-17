@@ -1,7 +1,7 @@
 import React from 'react'
-import { FileText, Lightbulb, FileEdit } from 'lucide-react'
+import { FileText, Lightbulb, FileEdit, Quote } from 'lucide-react'
 
-export type ReferenceType = 'source' | 'note' | 'source_insight'
+export type ReferenceType = 'source' | 'note' | 'source_insight' | 'source_embedding'
 
 export interface ParsedReference {
   type: ReferenceType
@@ -44,9 +44,9 @@ export interface ReferenceData {
  * @returns Array of parsed references
  */
 export function parseSourceReferences(text: string): ParsedReference[] {
-  // Match pattern: (source_insight|note|source):alphanumeric_id
+  // Match pattern: (source_embedding|source_insight|note|source):identifier
   // This handles references both inside and outside brackets
-  const pattern = /(source_insight|note|source):([a-zA-Z0-9_]+)/g
+  const pattern = /(source_embedding|source_insight|note|source):([a-zA-Z0-9_-]+)/g
   const matches: ParsedReference[] = []
 
   let match
@@ -173,7 +173,7 @@ export function convertSourceReferences(
  */
 export function convertReferencesToMarkdownLinks(text: string): string {
   // Step 1: Find ALL references using simple greedy pattern
-  const refPattern = /(source_insight|note|source):([a-zA-Z0-9_]+)/g
+  const refPattern = /(source_embedding|source_insight|note|source):([a-zA-Z0-9_-]+)/g
   const references: Array<{ type: string; id: string; index: number; length: number }> = []
 
   let match
@@ -182,7 +182,7 @@ export function convertReferencesToMarkdownLinks(text: string): string {
     const id = match[2]
 
     // Validate the reference
-    const validTypes = ['source', 'source_insight', 'note']
+    const validTypes = ['source', 'source_insight', 'source_embedding', 'note']
     if (!validTypes.includes(type) || !id || id.length === 0 || id.length > 100) {
       continue // Skip invalid references
     }
@@ -285,6 +285,7 @@ export function createReferenceLinkComponent(
       const IconComponent =
         type === 'source' ? FileText :
         type === 'source_insight' ? Lightbulb :
+        type === 'source_embedding' ? Quote :
         FileEdit // note
 
       return (

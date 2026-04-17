@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 import { sourcesApi } from '@/lib/api/sources'
+import { notebooksApi } from '@/lib/api/notebooks'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -10,27 +11,28 @@ import {
   UpdateSourceRequest,
   SourceResponse,
   SourceStatusResponse,
-  SourceListResponse
+  SourceListResponse,
+  DuplicateSourceGroupResponse,
+  DuplicateCleanupResponse,
 } from '@/lib/types/api'
 
 const NOTEBOOK_SOURCES_PAGE_SIZE = 30
 
-export function useSources(notebookId?: string) {
+export function useSources(notebookId?: string, options?: { enabled?: boolean }) {
+  const enabled = (options?.enabled ?? true) && !!notebookId
+
   return useQuery({
     queryKey: QUERY_KEYS.sources(notebookId),
     queryFn: () => sourcesApi.list({ notebook_id: notebookId }),
-    enabled: !!notebookId,
-    staleTime: 5 * 1000, // 5 seconds - more responsive for real-time source updates
-    refetchOnWindowFocus: true, // Refetch when user comes back to the tab
+    enabled,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 }
 
-/**
- * Hook for fetching notebook sources with infinite scroll pagination.
- * Returns flattened sources array and pagination controls.
- */
-export function useNotebookSources(notebookId: string) {
+export function useNotebookSources(notebookId: string, options?: { enabled?: boolean }) {
   const queryClient = useQueryClient()
+  const enabled = (options?.enabled ?? true) && !!notebookId
 
   const query = useInfiniteQuery({
     queryKey: QUERY_KEYS.sourcesInfinite(notebookId),
@@ -49,18 +51,16 @@ export function useNotebookSources(notebookId: string) {
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextOffset,
-    enabled: !!notebookId,
-    staleTime: 5 * 1000,
-    refetchOnWindowFocus: true,
+    enabled,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
-  // Flatten all pages into a single array (memoized to prevent infinite re-renders)
   const sources: SourceListResponse[] = useMemo(
-    () => query.data?.pages.flatMap(page => page.sources) ?? [],
+    () => query.data?.pages.flatMap((page) => page.sources) ?? [],
     [query.data?.pages]
   )
 
-  // Refetch function that resets to first page
   const refetch = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sourcesInfinite(notebookId) })
   }, [queryClient, notebookId])
@@ -68,6 +68,8 @@ export function useNotebookSources(notebookId: string) {
   return {
     sources,
     isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    isRefetching: query.isRefetching,
     isFetchingNextPage: query.isFetchingNextPage,
     hasNextPage: query.hasNextPage,
     fetchNextPage: query.fetchNextPage,
@@ -81,8 +83,8 @@ export function useSource(id: string) {
     queryKey: QUERY_KEYS.source(id),
     queryFn: () => sourcesApi.get(id),
     enabled: !!id,
-    staleTime: 30 * 1000, // 30 seconds - shorter stale time for more responsive updates
-    refetchOnWindowFocus: true, // Refetch when user comes back to the tab
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
   })
 }
 
@@ -93,29 +95,20 @@ export function useCreateSource() {
 
   return useMutation({
     mutationFn: (data: CreateSourceRequest) => sourcesApi.create(data),
-    onSuccess: (result: SourceResponse, variables) => {
-      // Invalidate queries for all relevant notebooks with immediate refetch
-      if (variables.notebooks) {
-        variables.notebooks.forEach(notebookId => {
-          queryClient.invalidateQueries({
-            queryKey: QUERY_KEYS.sources(notebookId),
-            refetchType: 'active' // Refetch active queries immediately
-          })
-        })
-      } else if (variables.notebook_id) {
-        queryClient.invalidateQueries({
-          queryKey: QUERY_KEYS.sources(variables.notebook_id),
-          refetchType: 'active'
-        })
-      }
+    onSuccess: (_result: SourceResponse, variables) => {
+      const notebookIds = variables.notebooks ?? (variables.notebook_id ? [variables.notebook_id] : [])
 
-      // Invalidate general sources query too with immediate refetch
-      queryClient.invalidateQueries({
-        queryKey: QUERY_KEYS.sources(),
-        refetchType: 'active'
+      notebookIds.forEach((notebookId) => {
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId), refetchType: 'active' })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sourcesInfinite(notebookId), refetchType: 'active' })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summaries(notebookId), refetchType: 'active' })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.wikiCards(notebookId), refetchType: 'active' })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebook(notebookId), refetchType: 'active' })
       })
 
-      // Show different messages based on processing mode
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(), refetchType: 'active' })
+      queryClient.invalidateQueries({ queryKey: ['summaries'], refetchType: 'active' })
+
       if (variables.async_processing) {
         toast({
           title: t.sources.sourceQueued,
@@ -144,10 +137,8 @@ export function useUpdateSource() {
   const { t } = useTranslation()
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateSourceRequest }) =>
-      sourcesApi.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: UpdateSourceRequest }) => sourcesApi.update(id, data),
     onSuccess: (_, { id }) => {
-      // Invalidate ALL sources queries (both general and notebook-specific)
       queryClient.invalidateQueries({ queryKey: ['sources'] })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(id) })
       toast({
@@ -173,9 +164,9 @@ export function useDeleteSource() {
   return useMutation({
     mutationFn: (id: string) => sourcesApi.delete(id),
     onSuccess: (_, id) => {
-      // Invalidate ALL sources queries (both general and notebook-specific)
       queryClient.invalidateQueries({ queryKey: ['sources'] })
-      // Also invalidate the specific source
+      queryClient.invalidateQueries({ queryKey: ['summaries'] })
+      queryClient.invalidateQueries({ queryKey: ['wiki-cards'] })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(id) })
       toast({
         title: t.common.success,
@@ -198,12 +189,15 @@ export function useFileUpload() {
   const { t } = useTranslation()
 
   return useMutation({
-    mutationFn: ({ file, notebookId }: { file: File; notebookId: string }) =>
+    mutationFn: ({ file, notebookId }: { file: File; notebookId?: string }) =>
       sourcesApi.upload(file, notebookId),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ 
-        queryKey: QUERY_KEYS.sources(variables.notebookId) 
-      })
+    onSuccess: (_, { notebookId }) => {
+      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      if (notebookId) {
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId) })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sourcesInfinite(notebookId) })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebook(notebookId) })
+      }
       toast({
         title: t.common.success,
         description: t.sources.fileUploadedSuccess,
@@ -219,33 +213,6 @@ export function useFileUpload() {
   })
 }
 
-export function useSourceStatus(sourceId: string, enabled = true) {
-  return useQuery({
-    queryKey: ['sources', sourceId, 'status'],
-    queryFn: () => sourcesApi.status(sourceId),
-    enabled: !!sourceId && enabled,
-    refetchInterval: (query) => {
-      // Auto-refresh every 2 seconds if processing
-      // The query.state.data contains the SourceStatusResponse
-      const data = query.state.data as SourceStatusResponse | undefined
-      if (data?.status === 'running' || data?.status === 'queued' || data?.status === 'new') {
-        return 2000
-      }
-      // No auto-refresh if completed, failed, or unknown
-      return false
-    },
-    staleTime: 0, // Always consider status data stale for real-time updates
-    retry: (failureCount, error) => {
-      // Don't retry on 404 (source not found)
-      const axiosError = error as { response?: { status?: number } }
-      if (axiosError?.response?.status === 404) {
-        return false
-      }
-      return failureCount < 3
-    },
-  })
-}
-
 export function useRetrySource() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -253,27 +220,37 @@ export function useRetrySource() {
 
   return useMutation({
     mutationFn: (sourceId: string) => sourcesApi.retry(sourceId),
-    onSuccess: (result, sourceId) => {
-      // Invalidate status query to refetch latest status
-      queryClient.invalidateQueries({
-        queryKey: ['sources', sourceId, 'status']
-      })
-      // Invalidate ALL sources queries to refresh the UI
-      queryClient.invalidateQueries({ queryKey: ['sources'] })
+    onSuccess: (_, sourceId) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(sourceId) })
-
+      queryClient.invalidateQueries({ queryKey: ['sources'] })
+      queryClient.invalidateQueries({ queryKey: ['summaries'] })
+      queryClient.invalidateQueries({ queryKey: ['wiki-cards'] })
       toast({
-        title: t.sources.sourceRequeued,
-        description: t.sources.sourceRequeuedDesc,
+        title: t.common.success,
+        description: t.sources.retryStarted || 'Source retry queued.',
       })
     },
     onError: (error: unknown) => {
       toast({
         title: t.common.error,
-        description: getApiErrorMessage(error, (key) => t(key), t.sources.failedToRetry),
+        description: getApiErrorMessage(error, (key) => t(key), t.sources.failedToRetrySource || 'Failed to retry source'),
         variant: 'destructive',
       })
     },
+  })
+}
+
+type SourceStatusOptions = boolean | { enabled?: boolean; refetchInterval?: number | false }
+
+export function useSourceStatus(id?: string, options?: SourceStatusOptions) {
+  const sourceId = id ?? ''
+  const normalizedOptions = typeof options === 'boolean' ? { enabled: options } : options
+
+  return useQuery<SourceStatusResponse>({
+    queryKey: [...QUERY_KEYS.source(sourceId), 'status'],
+    queryFn: () => sourcesApi.status(sourceId),
+    enabled: !!sourceId && (normalizedOptions?.enabled ?? true),
+    refetchInterval: normalizedOptions?.refetchInterval ?? false,
   })
 }
 
@@ -284,55 +261,25 @@ export function useAddSourcesToNotebook() {
 
   return useMutation({
     mutationFn: async ({ notebookId, sourceIds }: { notebookId: string; sourceIds: string[] }) => {
-      const { notebooksApi } = await import('@/lib/api/notebooks')
-
-      // Use Promise.allSettled to handle partial failures gracefully
-      const results = await Promise.allSettled(
-        sourceIds.map(sourceId => notebooksApi.addSource(notebookId, sourceId))
-      )
-
-      // Count successes and failures
-      const successes = results.filter(r => r.status === 'fulfilled').length
-      const failures = results.filter(r => r.status === 'rejected').length
-
-      return { successes, failures, total: sourceIds.length }
+      await Promise.all(sourceIds.map((sourceId) => notebooksApi.addSource(notebookId, sourceId)))
+      return { notebookId, sourceIds }
     },
-    onSuccess: (result, { notebookId, sourceIds }) => {
-      // Invalidate ALL sources queries to refresh all lists
-      queryClient.invalidateQueries({ queryKey: ['sources'] })
-      // Specifically invalidate the notebook's sources
+    onSuccess: ({ notebookId }) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId) })
-      // Invalidate each affected source
-      sourceIds.forEach(sourceId => {
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(sourceId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sourcesInfinite(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebook(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.duplicateSources(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summaries(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.wikiCards(notebookId) })
+      toast({
+        title: t.common.success,
+        description: t.sources.sourcesAddedSuccess || 'Sources added to notebook.',
       })
-
-      // Show appropriate toast based on results
-      if (result.failures === 0) {
-        toast({
-          title: t.common.success,
-          description: t.sources.sourcesAddedToNotebook.replace('{count}', result.successes.toString()),
-        })
-      } else if (result.successes === 0) {
-        toast({
-          title: t.common.error,
-          description: t.sources.failedToAddSourcesToNotebook,
-          variant: 'destructive',
-        })
-      } else {
-        toast({
-          title: t.common.success,
-          description: t.sources.partialAddSuccess
-            .replace('{success}', result.successes.toString())
-            .replace('{failed}', result.failures.toString()),
-          variant: 'default',
-        })
-      }
     },
     onError: (error: unknown) => {
       toast({
         title: t.common.error,
-        description: getApiErrorMessage(error, (key) => t(key), t.sources.failedToAddSourcesToNotebook),
+        description: getApiErrorMessage(error, (key) => t(key), t.sources.failedToAddSource),
         variant: 'destructive',
       })
     },
@@ -345,28 +292,78 @@ export function useRemoveSourceFromNotebook() {
   const { t } = useTranslation()
 
   return useMutation({
-    mutationFn: async ({ notebookId, sourceId }: { notebookId: string; sourceId: string }) => {
-      // This will call the API we created
-      const { notebooksApi } = await import('@/lib/api/notebooks')
-      return notebooksApi.removeSource(notebookId, sourceId)
-    },
+    mutationFn: ({ notebookId, sourceId }: { notebookId: string; sourceId: string }) =>
+      notebooksApi.removeSource(notebookId, sourceId),
     onSuccess: (_, { notebookId, sourceId }) => {
-      // Invalidate ALL sources queries to refresh all lists
-      queryClient.invalidateQueries({ queryKey: ['sources'] })
-      // Specifically invalidate the notebook's sources
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId) })
-      // Also invalidate the specific source
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sourcesInfinite(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebook(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.duplicateSources(notebookId) })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(sourceId) })
-
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summaries(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.wikiCards(notebookId) })
       toast({
         title: t.common.success,
-        description: t.sources.sourceRemovedFromNotebook,
+        description: t.sources.sourceRemovedSuccess || 'Source removed from notebook.',
       })
     },
     onError: (error: unknown) => {
       toast({
         title: t.common.error,
-        description: getApiErrorMessage(error, (key) => t(key), t.sources.failedToRemoveSourceFromNotebook),
+        description: getApiErrorMessage(error, (key) => t(key), t.sources.failedToRemoveSource || 'Failed to remove source from notebook'),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+export function useNotebookDuplicateSources(notebookId?: string, options?: { enabled?: boolean }) {
+  const resolvedNotebookId = notebookId ?? ''
+  const enabled = !!resolvedNotebookId && (options?.enabled ?? true)
+
+  return useQuery<DuplicateSourceGroupResponse[]>({
+    queryKey: QUERY_KEYS.duplicateSources(resolvedNotebookId),
+    queryFn: () => notebooksApi.listDuplicateSources(resolvedNotebookId),
+    enabled,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+  })
+}
+
+export function useScanNotebookDuplicateSources() {
+  const queryClient = useQueryClient()
+
+  return useMutation<DuplicateSourceGroupResponse[], unknown, string>({
+    mutationFn: (notebookId: string) => notebooksApi.listDuplicateSources(notebookId),
+    onSuccess: (result, notebookId) => {
+      queryClient.setQueryData(QUERY_KEYS.duplicateSources(notebookId), result)
+    },
+  })
+}
+
+export function useCleanupNotebookDuplicateSources() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation<DuplicateCleanupResponse, unknown, string>({
+    mutationFn: (notebookId: string) => notebooksApi.cleanupDuplicateSources(notebookId),
+    onSuccess: (_, notebookId) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sourcesInfinite(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summaries(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.wikiCards(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.notebook(notebookId) })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.duplicateSources(notebookId) })
+      toast({
+        title: t.common.success,
+        description: t.sources.duplicateCleanupSuccess,
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t.common.error,
+        description: getApiErrorMessage(error, (key) => t(key), t.sources.failedToCleanupDuplicates),
         variant: 'destructive',
       })
     },

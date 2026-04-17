@@ -1,4 +1,5 @@
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TypeVar, Union
@@ -7,6 +8,7 @@ from loguru import logger
 from surrealdb import AsyncSurreal, RecordID  # type: ignore
 
 T = TypeVar("T", Dict[str, Any], List[Dict[str, Any]])
+BRACKETED_RECORD_ID_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):⟨(.*?)(?:\\+)?⟩$")
 
 
 def get_database_url():
@@ -26,6 +28,25 @@ def get_database_password():
     return os.getenv("SURREAL_PASSWORD") or os.getenv("SURREAL_PASS")
 
 
+def normalize_record_id_string(value: str) -> str:
+    normalized = str(value).strip()
+    if not normalized:
+        return normalized
+
+    match = BRACKETED_RECORD_ID_RE.match(normalized)
+    if not match:
+        return normalized
+
+    table_name, record_key = match.groups()
+    record_key = record_key.rstrip("\\")
+    record_key = (
+        record_key.replace("\\⟨", "⟨")
+        .replace("\\⟩", "⟩")
+        .replace("\\\\", "\\")
+    )
+    return f"{table_name}:{record_key}"
+
+
 def parse_record_ids(obj: Any) -> Any:
     """Recursively parse and convert RecordIDs into strings."""
     if isinstance(obj, dict):
@@ -33,7 +54,9 @@ def parse_record_ids(obj: Any) -> Any:
     elif isinstance(obj, list):
         return [parse_record_ids(item) for item in obj]
     elif isinstance(obj, RecordID):
-        return str(obj)
+        return normalize_record_id_string(str(obj))
+    elif isinstance(obj, str):
+        return normalize_record_id_string(obj)
     return obj
 
 
@@ -41,7 +64,7 @@ def ensure_record_id(value: Union[str, RecordID]) -> RecordID:
     """Ensure a value is a RecordID."""
     if isinstance(value, RecordID):
         return value
-    return RecordID.parse(value)
+    return RecordID.parse(normalize_record_id_string(value))
 
 
 @asynccontextmanager
@@ -127,7 +150,21 @@ async def repo_upsert(
     data.pop("id", None)
     if add_timestamp:
         data["updated"] = datetime.now(timezone.utc)
-    query = f"UPSERT {id if id else table} MERGE $data;"
+    if id:
+        record_id = str(id)
+        if ":" in record_id:
+            record_table, record_key = record_id.split(":", 1)
+        else:
+            record_table, record_key = table, record_id
+        return await repo_query(
+            "UPSERT type::thing($table, $record_key) MERGE $data;",
+            {
+                "table": record_table,
+                "record_key": record_key,
+                "data": data,
+            },
+        )
+    query = f"UPSERT {table} MERGE $data;"
     return await repo_query(query, {"data": data})
 
 

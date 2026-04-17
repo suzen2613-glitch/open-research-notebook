@@ -1,23 +1,31 @@
 import apiClient from './client'
+import type { NoteResponse } from '@/lib/types/api'
 
 export interface SourceInsightResponse {
   id: string
   source_id: string
   insight_type: string
   content: string
+  transformation_id?: string | null
+  prompt_title?: string | null
+  can_refresh: boolean
   created: string
   updated: string
 }
 
 export interface CreateSourceInsightRequest {
-  transformation_id: string
+  transformation_id?: string
+  title?: string
+  prompt?: string
+  model_id?: string
 }
 
 export interface InsightCreationResponse {
   status: 'pending'
   message: string
   source_id: string
-  transformation_id: string
+  transformation_id?: string | null
+  insight_title?: string | null
   command_id?: string
 }
 
@@ -26,6 +34,12 @@ export interface CommandJobStatusResponse {
   status: string
   result?: Record<string, unknown>
   error_message?: string
+}
+
+export interface InsightCommandWaitResult {
+  success: boolean
+  status: 'completed' | 'failed' | 'canceled' | 'timeout'
+  errorMessage?: string
 }
 
 export const insightsApi = {
@@ -47,6 +61,22 @@ export const insightsApi = {
     return response.data
   },
 
+  refresh: async (insightId: string, modelId?: string) => {
+    const response = await apiClient.post<InsightCreationResponse>(
+      `/insights/${insightId}/refresh`,
+      modelId ? { model_id: modelId } : {}
+    )
+    return response.data
+  },
+
+  saveAsNote: async (insightId: string, notebookId?: string) => {
+    const response = await apiClient.post<NoteResponse>(
+      `/insights/${insightId}/save-as-note`,
+      notebookId ? { notebook_id: notebookId } : {}
+    )
+    return response.data
+  },
+
   delete: async (insightId: string) => {
     await apiClient.delete(`/insights/${insightId}`)
   },
@@ -60,12 +90,12 @@ export const insightsApi = {
 
   /**
    * Poll command status until completed or failed.
-   * Returns true if completed successfully, false if failed.
+   * Returns completion metadata so the caller can surface actionable errors.
    */
   waitForCommand: async (
     commandId: string,
     options?: { maxAttempts?: number; intervalMs?: number }
-  ): Promise<boolean> => {
+  ): Promise<InsightCommandWaitResult> => {
     const maxAttempts = options?.maxAttempts ?? 60 // Default 60 attempts
     const intervalMs = options?.intervalMs ?? 2000 // Default 2 seconds
 
@@ -73,11 +103,15 @@ export const insightsApi = {
       try {
         const status = await insightsApi.getCommandStatus(commandId)
         if (status.status === 'completed') {
-          return true
+          return { success: true, status: 'completed' }
         }
         if (status.status === 'failed' || status.status === 'canceled') {
-          console.error('Command failed:', status.error_message)
-          return false
+          console.warn('Insight command did not complete:', status.error_message)
+          return {
+            success: false,
+            status: status.status,
+            errorMessage: status.error_message,
+          }
         }
         // Still running, wait and retry
         await new Promise(resolve => setTimeout(resolve, intervalMs))
@@ -89,6 +123,10 @@ export const insightsApi = {
     }
     // Timeout
     console.warn('Command polling timed out')
-    return false
+    return {
+      success: false,
+      status: 'timeout',
+      errorMessage: 'Insight generation timed out while waiting for background processing.',
+    }
   }
 }

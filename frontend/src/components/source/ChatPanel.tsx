@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { MarkdownImage } from '@/components/ui/markdown-image'
 import {
   SourceChatMessage,
   SourceChatContextIndicator,
@@ -84,7 +85,12 @@ export function ChatPanel({
   const { openModal } = useModalManager()
 
   const handleReferenceClick = (type: string, id: string) => {
-    const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
+    const modalType =
+      type === 'source_insight'
+        ? 'insight'
+        : type === 'source_embedding'
+          ? 'evidence'
+          : type as 'source' | 'note' | 'insight' | 'evidence'
 
     try {
       openModal(modalType, id)
@@ -261,6 +267,12 @@ export function ChatPanel({
                   {contextIndicators.notes.length} {contextIndicators.notes.length === 1 ? t.common.note : t.common.notes}
                 </Badge>
               )}
+              {(contextIndicators.evidence?.length ?? 0) > 0 && (
+                <Badge variant="outline" className="gap-1">
+                  <FileText className="h-3 w-3" />
+                  {contextIndicators.evidence?.length ?? 0} {t.sources.evidenceLabel}
+                </Badge>
+              )}
             </div>
           </div>
         )}
@@ -345,6 +357,14 @@ function AIMessageContent({
         remarkPlugins={[remarkGfm]}
         components={{
           a: LinkComponent,
+          img: ({ src, alt, ...props }) => (
+            <MarkdownImage
+              {...props}
+              src={src}
+              alt={alt}
+              className="my-4 max-w-full rounded-md"
+            />
+          ),
           p: ({ children }) => <p className="mb-4">{children}</p>,
           h1: ({ children }) => <h1 className="mb-4 mt-6">{children}</h1>,
           h2: ({ children }) => <h2 className="mb-3 mt-5">{children}</h2>,

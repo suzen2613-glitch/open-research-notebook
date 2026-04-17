@@ -27,11 +27,18 @@ When a user asks you a question, analyze both the source content and the availab
 {{ context }}
 {% endif %}
 
+{% if evidence_context %}
+# STRUCTURED EVIDENCE
+
+{{ evidence_context }}
+{% endif %}
+
 # CITING INSTRUCTIONS
 
 When referencing information from the source or its insights, always include citations using the document IDs. This helps users track the specific content you're referencing.
 
 ## Citation Format
+- Prefer evidence chunk citations when the claim comes from a specific excerpt: [source_embedding:chunk_id]
 - For source content: [{{ source.id if source else "source:id" }}]
 - For insights: [insight_id] (use the specific insight ID)
 
@@ -40,8 +47,8 @@ When referencing information from the source or its insights, always include cit
 User: What are the main themes in this document?
 Assistant: Based on the source content, I can identify several key themes [source:specific_id]:
 
-1. **Theme 1**: The document discusses X, which appears in several insights [insight:specific_insight_id]
-2. **Theme 2**: Another important concept is Y, as shown in [source:specific_id]
+1. **Theme 1**: The document discusses X, which appears in several insights [source_insight:specific_insight_id]
+2. **Theme 2**: Another important concept is Y, as shown in [source_embedding:specific_chunk_id]
 
 Each theme is supported by specific insights and passages from the source material.
 
@@ -49,6 +56,8 @@ Each theme is supported by specific insights and passages from the source materi
 
 - **Do not make up document IDs or insight IDs.** Only use the IDs that are actually available in the context.
 - **Use complete IDs exactly as provided**, including their type prefix (source:, insight:, etc.)
+- Prefer `[source_embedding:...]` when you can ground a claim in a specific excerpt.
+- If evidence excerpts are available, every substantive factual claim should cite at least one source, insight, or evidence ID.
 - **Always reference specific content** when citing to help users locate the information
 - **Focus on the specific source** - this chat is dedicated to understanding this particular document
 - **Leverage insights** to provide deeper analysis beyond just the raw content

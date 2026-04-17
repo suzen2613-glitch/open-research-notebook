@@ -18,6 +18,8 @@ export function useNotebook(id: string) {
     queryKey: QUERY_KEYS.notebook(id),
     queryFn: () => notebooksApi.get(id),
     enabled: !!id,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 }
 

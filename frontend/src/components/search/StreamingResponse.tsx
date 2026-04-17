@@ -8,6 +8,7 @@ import { CheckCircle, Sparkles, Lightbulb, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { MarkdownImage } from '@/components/ui/markdown-image'
 import { convertReferencesToMarkdownLinks, createReferenceLinkComponent } from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -37,7 +38,12 @@ export function StreamingResponse({
   const { t } = useTranslation()
 
   const handleReferenceClick = (type: string, id: string) => {
-    const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
+    const modalType =
+      type === 'source_insight'
+        ? 'insight'
+        : type === 'source_embedding'
+          ? 'evidence'
+          : type as 'source' | 'note' | 'insight' | 'evidence'
 
     try {
       openModal(modalType, id)
@@ -45,7 +51,12 @@ export function StreamingResponse({
       // The modal component itself will handle displaying "not found" states.
       // This try-catch is here for future enhancements or unexpected errors.
     } catch {
-      const typeLabel = type === 'source_insight' ? 'insight' : type
+      const typeLabel =
+        type === 'source_insight'
+          ? 'insight'
+          : type === 'source_embedding'
+            ? 'evidence'
+            : type
       toast.error(t.common.itemNotFound.replace('{type}', typeLabel))
     }
   }
@@ -178,6 +189,14 @@ function FinalAnswerContent({
         remarkPlugins={[remarkGfm]}
         components={{
           a: LinkComponent,
+          img: ({ src, alt, ...props }) => (
+            <MarkdownImage
+              {...props}
+              src={src}
+              alt={alt}
+              className="my-4 max-w-full rounded-md"
+            />
+          ),
           table: ({ children }) => (
             <div className="my-4 overflow-x-auto">
               <table className="min-w-full border-collapse border border-border">{children}</table>

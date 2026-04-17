@@ -1,0 +1,1 @@
+REMOVE FIELD IF EXISTS embedding ON TABLE source_wiki_card;

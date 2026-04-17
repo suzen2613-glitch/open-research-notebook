@@ -7,9 +7,11 @@ import { Button } from '@/components/ui/button'
 import { FileText } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { MarkdownImage } from '@/components/ui/markdown-image'
 import { useInsight } from '@/lib/hooks/use-insights'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
 
 interface SourceInsightDialogProps {
   open: boolean
@@ -49,6 +51,16 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
     }
   }
 
+  const handleReferenceClick = (type: string, id: string) => {
+    const modalType =
+      type === 'source_insight'
+        ? 'insight'
+        : type === 'source_embedding'
+          ? 'evidence'
+          : type as 'source' | 'note' | 'insight' | 'evidence'
+    openModal(modalType, id)
+  }
+
   const handleDelete = async () => {
     if (!insight?.id || !onDelete) return
     setIsDeleting(true)
@@ -67,6 +79,11 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
       setShowDeleteConfirm(false)
     }
   }, [open])
+
+  const markdownWithCompactRefs = displayInsight?.content
+    ? convertReferencesToCompactMarkdown(displayInsight.content, t.common.references)
+    : ''
+  const LinkComponent = createCompactReferenceLinkComponent(handleReferenceClick)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -129,6 +146,15 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
+                    a: LinkComponent,
+                    img: ({ src, alt, ...props }) => (
+                      <MarkdownImage
+                        {...props}
+                        src={src}
+                        alt={alt}
+                        className="my-4 max-w-full rounded-md"
+                      />
+                    ),
                     table: ({ children }) => (
                       <div className="my-4 overflow-x-auto">
                         <table className="min-w-full border-collapse border border-border">{children}</table>
@@ -141,7 +167,7 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
                     td: ({ children }) => <td className="border border-border px-3 py-2">{children}</td>,
                   }}
                 >
-                  {displayInsight.content}
+                  {markdownWithCompactRefs}
                 </ReactMarkdown>
               </div>
             ) : (

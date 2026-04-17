@@ -1,0 +1,4 @@
+DEFINE FIELD IF NOT EXISTS notebook_type ON TABLE notebook TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS theme_color ON TABLE notebook TYPE option<string>;
+UPDATE notebook SET notebook_type = "academic" WHERE notebook_type = NONE;
+UPDATE notebook SET theme_color = "blue" WHERE theme_color = NONE;

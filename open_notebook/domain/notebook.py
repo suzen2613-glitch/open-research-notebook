@@ -8,9 +8,142 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from surreal_commands import submit_command
 from surrealdb import RecordID
 
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import (
+    ensure_record_id,
+    normalize_record_id_string,
+    repo_query,
+)
 from open_notebook.domain.base import ObjectModel
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
+from open_notebook.utils.pdf_assets import cleanup_source_images
+
+
+def _normalize_wiki_card_optional_string(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _sanitize_wiki_card_relations(
+    value: Any, *, include_source_title: bool
+) -> List[Dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+
+    sanitized: List[Dict[str, str]] = []
+    seen: set[Tuple[str, str, str, str]] = set()
+    for raw_entry in value:
+        if not isinstance(raw_entry, dict):
+            continue
+
+        source_id = _normalize_wiki_card_optional_string(raw_entry.get("source_id"))
+        relation_type = _normalize_wiki_card_optional_string(
+            raw_entry.get("relation_type")
+        )
+        reason = _normalize_wiki_card_optional_string(raw_entry.get("reason"))
+        if not source_id or not relation_type or not reason:
+            continue
+
+        normalized_entry = {
+            "source_id": source_id,
+            "relation_type": relation_type,
+            "reason": reason,
+        }
+        source_title = _normalize_wiki_card_optional_string(
+            raw_entry.get("source_title")
+        )
+        if include_source_title and source_title:
+            normalized_entry["source_title"] = source_title
+
+        dedupe_key = (
+            normalized_entry["source_id"],
+            normalized_entry["relation_type"],
+            normalized_entry["reason"],
+            normalized_entry.get("source_title", ""),
+        )
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        sanitized.append(normalized_entry)
+
+    return sanitized
+
+
+def _sanitize_wiki_card_frontmatter(value: Any) -> Optional[Dict[str, Any]]:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return {}
+
+    sanitized = {str(key): item for key, item in value.items()}
+    if "relation_edges" in sanitized:
+        sanitized["relation_edges"] = _sanitize_wiki_card_relations(
+            sanitized.get("relation_edges"),
+            include_source_title=False,
+        )
+    return sanitized
+
+
+def _sanitize_wiki_card_evidence_snippets(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    sanitized: List[Dict[str, Any]] = []
+    seen: set[Tuple[str, str, str, Optional[int], Optional[int]]] = set()
+    for raw_entry in value:
+        if not isinstance(raw_entry, dict):
+            continue
+
+        embedding_id = _normalize_wiki_card_optional_string(raw_entry.get("embedding_id"))
+        excerpt = _normalize_wiki_card_optional_string(raw_entry.get("excerpt"))
+        reason = _normalize_wiki_card_optional_string(raw_entry.get("reason"))
+        if not embedding_id or not excerpt or not reason:
+            continue
+
+        section = _normalize_wiki_card_optional_string(raw_entry.get("section"))
+        char_start_raw = raw_entry.get("char_start")
+        char_end_raw = raw_entry.get("char_end")
+        char_start = (
+            int(char_start_raw)
+            if isinstance(char_start_raw, (int, float)) or str(char_start_raw).isdigit()
+            else None
+        )
+        char_end = (
+            int(char_end_raw)
+            if isinstance(char_end_raw, (int, float)) or str(char_end_raw).isdigit()
+            else None
+        )
+
+        normalized_entry: Dict[str, Any] = {
+            "embedding_id": embedding_id,
+            "excerpt": excerpt,
+            "reason": reason,
+        }
+        if section:
+            normalized_entry["section"] = section
+        if char_start is not None:
+            normalized_entry["char_start"] = char_start
+        if char_end is not None:
+            normalized_entry["char_end"] = char_end
+
+        dedupe_key = (
+            normalized_entry["embedding_id"],
+            normalized_entry["excerpt"],
+            normalized_entry["reason"],
+            normalized_entry.get("char_start"),
+            normalized_entry.get("char_end"),
+        )
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        sanitized.append(normalized_entry)
+
+    return sanitized
+
+
+NOTEBOOK_TYPE_VALUES = {"academic", "general"}
+NOTEBOOK_THEME_COLOR_VALUES = {"slate", "blue", "emerald", "amber", "rose", "violet"}
 
 
 class Notebook(ObjectModel):
@@ -18,6 +151,8 @@ class Notebook(ObjectModel):
     name: str
     description: str
     archived: Optional[bool] = False
+    notebook_type: Literal["academic", "general"] = "academic"
+    theme_color: Literal["slate", "blue", "emerald", "amber", "rose", "violet"] = "blue"
 
     @field_validator("name")
     @classmethod
@@ -25,6 +160,26 @@ class Notebook(ObjectModel):
         if not v.strip():
             raise InvalidInputError("Notebook name cannot be empty")
         return v
+
+    @field_validator("notebook_type")
+    @classmethod
+    def notebook_type_must_be_supported(cls, v: str):
+        normalized = str(v).strip().lower()
+        if normalized not in NOTEBOOK_TYPE_VALUES:
+            raise InvalidInputError(
+                f"Notebook type must be one of: {', '.join(sorted(NOTEBOOK_TYPE_VALUES))}"
+            )
+        return normalized
+
+    @field_validator("theme_color")
+    @classmethod
+    def theme_color_must_be_supported(cls, v: str):
+        normalized = str(v).strip().lower()
+        if normalized not in NOTEBOOK_THEME_COLOR_VALUES:
+            raise InvalidInputError(
+                f"Notebook theme color must be one of: {', '.join(sorted(NOTEBOOK_THEME_COLOR_VALUES))}"
+            )
+        return normalized
 
     async def get_sources(self) -> List["Source"]:
         try:
@@ -237,7 +392,21 @@ class Asset(BaseModel):
 
 class SourceEmbedding(ObjectModel):
     table_name: ClassVar[str] = "source_embedding"
+    source: Optional[str] = None
+    order: Optional[int] = None
     content: str
+    section: Optional[str] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def parse_source(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, RecordID):
+            return str(value)
+        return str(value)
 
     async def get_source(self) -> "Source":
         try:
@@ -258,6 +427,18 @@ class SourceInsight(ObjectModel):
     table_name: ClassVar[str] = "source_insight"
     insight_type: str
     content: str
+    transformation_id: Optional[str] = None
+    prompt_title: Optional[str] = None
+    prompt_snapshot: Optional[str] = None
+
+    @field_validator("transformation_id", mode="before")
+    @classmethod
+    def parse_transformation_id(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, RecordID):
+            return str(value)
+        return str(value)
 
     async def get_source(self) -> "Source":
         try:
@@ -278,6 +459,9 @@ class SourceInsight(ObjectModel):
         note = Note(
             title=f"{self.insight_type} from source {source.title}",
             content=self.content,
+            board_column="inbox",
+            source_id=source.id,
+            source_insight_id=self.id,
         )
         await note.save()
         if notebook_id:
@@ -285,14 +469,325 @@ class SourceInsight(ObjectModel):
         return note
 
 
+class SourceWikiCard(ObjectModel):
+    table_name: ClassVar[str] = "source_wiki_card"
+    nullable_fields: ClassVar[set[str]] = {
+        "source_title",
+        "title",
+        "short_title",
+        "canonical_title",
+        "slug",
+        "year",
+        "venue",
+        "paper_type",
+        "summary_text",
+        "research_context",
+        "claimed_gap",
+        "positioning_summary",
+        "obsidian_markdown",
+        "obsidian_frontmatter",
+        "summary_source_insight_id",
+        "prompt_snapshot",
+        "model_id",
+        "command_id",
+        "error_message",
+        "display_language",
+        "canonical_language",
+        "extraction_confidence",
+        "embedding",
+    }
+
+    source: str
+    notebook_ids: List[str] = Field(default_factory=list)
+    source_title: Optional[str] = None
+    title: Optional[str] = None
+    short_title: Optional[str] = None
+    canonical_title: Optional[str] = None
+    slug: Optional[str] = None
+    authors: List[str] = Field(default_factory=list)
+    year: Optional[int] = None
+    venue: Optional[str] = None
+    paper_type: Optional[
+        Literal[
+            "review",
+            "foundational",
+            "method",
+            "application",
+            "benchmark",
+            "survey",
+        ]
+    ] = None
+    domains: List[str] = Field(default_factory=list)
+    summary_text: Optional[str] = None
+    research_context: Optional[str] = None
+    claimed_gap: Optional[str] = None
+    positioning_summary: Optional[str] = None
+    topics: List[str] = Field(default_factory=list)
+    methods: List[str] = Field(default_factory=list)
+    problems: List[str] = Field(default_factory=list)
+    contributions: List[str] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+    keywords: List[str] = Field(default_factory=list)
+    moc_groups: List[str] = Field(default_factory=list)
+    recommended_entry_points: List[str] = Field(default_factory=list)
+    is_key_paper: bool = False
+    concept_ids: List[str] = Field(default_factory=list)
+    concept_names: List[str] = Field(default_factory=list)
+    core_concept_ids: List[str] = Field(default_factory=list)
+    question_ids: List[str] = Field(default_factory=list)
+    question_names: List[str] = Field(default_factory=list)
+    related_sources: List[Dict[str, str]] = Field(default_factory=list)
+    relation_edges: List[Dict[str, str]] = Field(default_factory=list)
+    display_language: Optional[Literal["en", "zh", "mixed", "unknown"]] = None
+    canonical_language: Optional[Literal["en", "zh", "mixed", "unknown"]] = None
+    extraction_confidence: Optional[float] = None
+    evidence_snippets: List[Dict[str, Any]] = Field(default_factory=list)
+    obsidian_markdown: Optional[str] = None
+    obsidian_frontmatter: Optional[Dict[str, Any]] = None
+    summary_source_insight_id: Optional[str] = None
+    prompt_snapshot: Optional[str] = None
+    model_id: Optional[str] = None
+    command_id: Optional[str] = None
+    status: Literal["pending", "completed", "failed"] = "pending"
+    error_message: Optional[str] = None
+    embedding: Optional[List[float]] = None
+
+    @field_validator("source", "summary_source_insight_id", "command_id", mode="before")
+    @classmethod
+    def parse_record_reference(cls, value):
+        if value is None:
+            return None
+        return normalize_record_id_string(str(value))
+
+    @field_validator("notebook_ids", mode="before")
+    @classmethod
+    def parse_notebook_ids(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [normalize_record_id_string(str(item)) for item in value if item]
+        return [normalize_record_id_string(str(value))]
+
+    @field_validator(
+        "concept_ids",
+        "core_concept_ids",
+        "question_ids",
+        "recommended_entry_points",
+        mode="before",
+    )
+    @classmethod
+    def parse_registry_ids(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [normalize_record_id_string(str(item)) for item in value if item]
+        return [normalize_record_id_string(str(value))]
+
+    @field_validator(
+        "domains",
+        "topics",
+        "methods",
+        "problems",
+        "contributions",
+        "limitations",
+        "concept_names",
+        "question_names",
+        "authors",
+        "keywords",
+        "moc_groups",
+        mode="before",
+    )
+    @classmethod
+    def parse_string_lists(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            result: List[str] = []
+            seen: set[str] = set()
+            for item in value:
+                normalized = str(item).strip()
+                if not normalized:
+                    continue
+                key = normalized.casefold()
+                if key in seen:
+                    continue
+                seen.add(key)
+                result.append(normalized)
+            return result
+        normalized = str(value).strip()
+        return [normalized] if normalized else []
+
+    @field_validator("related_sources", mode="before")
+    @classmethod
+    def parse_related_sources(cls, value):
+        return _sanitize_wiki_card_relations(value, include_source_title=True)
+
+    @field_validator("relation_edges", mode="before")
+    @classmethod
+    def parse_relation_edges(cls, value):
+        return _sanitize_wiki_card_relations(value, include_source_title=False)
+
+    @field_validator("evidence_snippets", mode="before")
+    @classmethod
+    def parse_evidence_snippets(cls, value):
+        return _sanitize_wiki_card_evidence_snippets(value)
+
+    @field_validator("obsidian_frontmatter", mode="before")
+    @classmethod
+    def parse_obsidian_frontmatter(cls, value):
+        return _sanitize_wiki_card_frontmatter(value)
+
+    @field_validator("extraction_confidence", mode="before")
+    @classmethod
+    def parse_extraction_confidence(cls, value):
+        if value is None or value == "":
+            return None
+        confidence = float(value)
+        return min(1.0, max(0.0, confidence))
+
+    async def get_source(self) -> "Source":
+        try:
+            return await Source.get(self.source)
+        except Exception as e:
+            logger.error(f"Error fetching source for wiki card {self.id}: {str(e)}")
+            logger.exception(e)
+            raise DatabaseOperationError(e)
+
+    def _prepare_save_data(self) -> Dict[str, Any]:
+        data = super()._prepare_save_data()
+        data["related_sources"] = _sanitize_wiki_card_relations(
+            data.get("related_sources"),
+            include_source_title=True,
+        )
+        data["relation_edges"] = _sanitize_wiki_card_relations(
+            data.get("relation_edges"),
+            include_source_title=False,
+        )
+        data["evidence_snippets"] = _sanitize_wiki_card_evidence_snippets(
+            data.get("evidence_snippets")
+        )
+        data["obsidian_frontmatter"] = _sanitize_wiki_card_frontmatter(
+            data.get("obsidian_frontmatter")
+        )
+        for field_name in ("source", "summary_source_insight_id", "command_id"):
+            if data.get(field_name) is None:
+                continue
+            if field_name == "command_id":
+                data[field_name] = str(data[field_name])
+            else:
+                data[field_name] = ensure_record_id(data[field_name])
+        return data
+
+
+class Concept(ObjectModel):
+    table_name: ClassVar[str] = "concept"
+    name: str
+    aliases: List[str] = Field(default_factory=list)
+    canonical_language: Optional[Literal["en", "zh", "mixed", "unknown"]] = None
+
+    @field_validator("aliases", mode="before")
+    @classmethod
+    def parse_aliases(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            seen: set[str] = set()
+            aliases: List[str] = []
+            for item in value:
+                normalized = str(item).strip()
+                if not normalized:
+                    continue
+                key = normalized.casefold()
+                if key in seen:
+                    continue
+                seen.add(key)
+                aliases.append(normalized)
+            return aliases
+        normalized = str(value).strip()
+        return [normalized] if normalized else []
+
+
+class Question(ObjectModel):
+    table_name: ClassVar[str] = "question"
+    name: str
+    aliases: List[str] = Field(default_factory=list)
+    canonical_language: Optional[Literal["en", "zh", "mixed", "unknown"]] = None
+
+    @field_validator("aliases", mode="before")
+    @classmethod
+    def parse_aliases(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            seen: set[str] = set()
+            aliases: List[str] = []
+            for item in value:
+                normalized = str(item).strip()
+                if not normalized:
+                    continue
+                key = normalized.casefold()
+                if key in seen:
+                    continue
+                seen.add(key)
+                aliases.append(normalized)
+            return aliases
+        normalized = str(value).strip()
+        return [normalized] if normalized else []
+
+
+class SourceRelation(ObjectModel):
+    table_name: ClassVar[str] = "source_relation"
+    nullable_fields: ClassVar[set[str]] = {
+        "source_title",
+        "target_source_title",
+        "wiki_card_id",
+    }
+
+    source_id: str
+    source_title: Optional[str] = None
+    target_source_id: str
+    target_source_title: Optional[str] = None
+    relation_type: str
+    reason: str
+    notebook_ids: List[str] = Field(default_factory=list)
+    wiki_card_id: Optional[str] = None
+
+    @field_validator("source_id", "target_source_id", "wiki_card_id", mode="before")
+    @classmethod
+    def parse_record_reference(cls, value):
+        if value is None:
+            return None
+        return normalize_record_id_string(str(value))
+
+    @field_validator("notebook_ids", mode="before")
+    @classmethod
+    def parse_notebook_ids(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [normalize_record_id_string(str(item)) for item in value if item]
+        return [normalize_record_id_string(str(value))]
+
+    def _prepare_save_data(self) -> Dict[str, Any]:
+        data = super()._prepare_save_data()
+        for field_name in ("source_id", "target_source_id", "wiki_card_id"):
+            if data.get(field_name) is None:
+                continue
+            data[field_name] = ensure_record_id(data[field_name])
+        return data
+
+
 class Source(ObjectModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     table_name: ClassVar[str] = "source"
+    nullable_fields: ClassVar[set[str]] = {"error_message"}
     asset: Optional[Asset] = None
     title: Optional[str] = None
     topics: Optional[List[str]] = Field(default_factory=list)
     full_text: Optional[str] = None
+    status: Optional[str] = None
+    error_message: Optional[str] = None
     command: Optional[Union[str, RecordID]] = Field(
         default=None, description="Link to surreal-commands processing job"
     )
@@ -311,23 +806,25 @@ class Source(ObjectModel):
         """Parse id field to handle both string and RecordID inputs"""
         if value is None:
             return None
-        if isinstance(value, RecordID):
-            return str(value)
-        return str(value) if value else None
+        return normalize_record_id_string(str(value)) if value else None
 
     async def get_status(self) -> Optional[str]:
         """Get the processing status of the associated command"""
+        if self.status in {"completed", "failed"}:
+            return self.status
         if not self.command:
-            return None
+            return self.status
 
         try:
             from surreal_commands import get_command_status
 
-            status = await get_command_status(str(self.command))
-            return status.status if status else "unknown"
+            command_status = await get_command_status(str(self.command))
+            if command_status and command_status.status:
+                return command_status.status
+            return self.status or "unknown"
         except Exception as e:
             logger.warning(f"Failed to get command status for {self.command}: {e}")
-            return "unknown"
+            return self.status or "unknown"
 
     async def get_processing_progress(self) -> Optional[Dict[str, Any]]:
         """Get detailed processing information for the associated command"""
@@ -348,14 +845,23 @@ class Source(ObjectModel):
             )
 
             return {
-                "status": status_result.status,
+                "status": self.status or status_result.status,
                 "started_at": execution_metadata.get("started_at"),
                 "completed_at": execution_metadata.get("completed_at"),
-                "error": getattr(status_result, "error_message", None),
+                "error": self.error_message
+                or getattr(status_result, "error_message", None),
                 "result": result,
             }
         except Exception as e:
             logger.warning(f"Failed to get command progress for {self.command}: {e}")
+            if self.status or self.error_message:
+                return {
+                    "status": self.status,
+                    "started_at": None,
+                    "completed_at": None,
+                    "error": self.error_message,
+                    "result": None,
+                }
             return None
 
     async def get_context(
@@ -389,11 +895,29 @@ class Source(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(f"Failed to count chunks for source: {str(e)}")
 
+    async def get_embeddings(self, limit: Optional[int] = None) -> List[SourceEmbedding]:
+        try:
+            query = """
+                SELECT * FROM source_embedding
+                WHERE source = $id
+                ORDER BY order ASC
+            """
+            params: Dict[str, Any] = {"id": ensure_record_id(self.id)}
+            if limit is not None:
+                query += " LIMIT $limit"
+                params["limit"] = limit
+            result = await repo_query(query, params)
+            return [SourceEmbedding(**embedding) for embedding in result]
+        except Exception as e:
+            logger.error(f"Error fetching embeddings for source {self.id}: {str(e)}")
+            logger.exception(e)
+            raise DatabaseOperationError("Failed to fetch embeddings for source")
+
     async def get_insights(self) -> List[SourceInsight]:
         try:
             result = await repo_query(
                 """
-                SELECT * FROM source_insight WHERE source=$id
+                SELECT * FROM source_insight WHERE source=$id ORDER BY created DESC
                 """,
                 {"id": ensure_record_id(self.id)},
             )
@@ -402,6 +926,41 @@ class Source(ObjectModel):
             logger.error(f"Error fetching insights for source {self.id}: {str(e)}")
             logger.exception(e)
             raise DatabaseOperationError("Failed to fetch insights for source")
+
+    async def get_wiki_card(self) -> Optional[SourceWikiCard]:
+        try:
+            result = await repo_query(
+                """
+                SELECT * FROM source_wiki_card
+                WHERE source = $id
+                ORDER BY updated DESC
+                LIMIT 1
+                """,
+                {"id": ensure_record_id(self.id)},
+            )
+            if not result:
+                return None
+            return SourceWikiCard(**result[0])
+        except Exception as e:
+            logger.error(f"Error fetching wiki card for source {self.id}: {str(e)}")
+            logger.exception(e)
+            raise DatabaseOperationError("Failed to fetch wiki card for source")
+
+    async def get_notebook_ids(self) -> List[str]:
+        try:
+            result = await repo_query(
+                "SELECT VALUE out FROM reference WHERE in = $source_id",
+                {"source_id": ensure_record_id(self.id)},
+            )
+            return [str(item) for item in result if item]
+        except Exception as e:
+            logger.error(
+                f"Error fetching notebook relationships for source {self.id}: {str(e)}"
+            )
+            logger.exception(e)
+            raise DatabaseOperationError(
+                "Failed to fetch notebook relationships for source"
+            )
 
     async def add_to_notebook(self, notebook_id: str) -> Any:
         if not notebook_id:
@@ -456,7 +1015,15 @@ class Source(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(e)
 
-    async def add_insight(self, insight_type: str, content: str) -> Optional[str]:
+    async def add_insight(
+        self,
+        insight_type: str,
+        content: str,
+        *,
+        transformation_id: Optional[str] = None,
+        prompt_title: Optional[str] = None,
+        prompt_snapshot: Optional[str] = None,
+    ) -> Optional[str]:
         """
         Submit insight creation as an async command (fire-and-forget).
 
@@ -491,6 +1058,9 @@ class Source(ObjectModel):
                     "source_id": str(self.id),
                     "insight_type": insight_type,
                     "content": content,
+                    "transformation_id": transformation_id,
+                    "prompt_title": prompt_title,
+                    "prompt_snapshot": prompt_snapshot,
                 },
             )
             logger.info(
@@ -515,6 +1085,8 @@ class Source(ObjectModel):
 
     async def delete(self) -> bool:
         """Delete source and clean up associated file, embeddings, and insights."""
+        cleanup_source_images(self.id)
+
         # Clean up uploaded file if it exists
         if self.asset and self.asset.file_path:
             file_path = Path(self.asset.file_path)
@@ -543,6 +1115,10 @@ class Source(ObjectModel):
                 "DELETE source_insight WHERE source = $source_id",
                 {"source_id": source_id},
             )
+            await repo_query(
+                "DELETE source_wiki_card WHERE source = $source_id",
+                {"source_id": source_id},
+            )
             logger.debug(f"Deleted embeddings and insights for source {self.id}")
         except Exception as e:
             logger.warning(
@@ -556,9 +1132,13 @@ class Source(ObjectModel):
 
 class Note(ObjectModel):
     table_name: ClassVar[str] = "note"
+    nullable_fields: ClassVar[set[str]] = {"source_id", "source_insight_id"}
     title: Optional[str] = None
     note_type: Optional[Literal["human", "ai"]] = None
     content: Optional[str] = None
+    board_column: Literal["inbox", "working", "final"] = "inbox"
+    source_id: Optional[str] = None
+    source_insight_id: Optional[str] = None
 
     @field_validator("content")
     @classmethod
@@ -566,6 +1146,15 @@ class Note(ObjectModel):
         if v is not None and not v.strip():
             raise InvalidInputError("Note content cannot be empty")
         return v
+
+    @field_validator("source_id", "source_insight_id", mode="before")
+    @classmethod
+    def parse_record_reference(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, RecordID):
+            return str(value)
+        return str(value)
 
     async def save(self) -> Optional[str]:
         """
@@ -601,13 +1190,26 @@ class Note(ObjectModel):
         self, context_size: Literal["short", "long"] = "short"
     ) -> Dict[str, Any]:
         if context_size == "long":
-            return dict(id=self.id, title=self.title, content=self.content)
+            return dict(
+                id=self.id,
+                title=self.title,
+                content=self.content,
+                board_column=self.board_column,
+            )
         else:
             return dict(
                 id=self.id,
                 title=self.title,
                 content=self.content[:100] if self.content else None,
+                board_column=self.board_column,
             )
+
+    def _prepare_save_data(self) -> Dict[str, Any]:
+        data = super()._prepare_save_data()
+        for field_name in ("source_id", "source_insight_id"):
+            if data.get(field_name) is not None:
+                data[field_name] = ensure_record_id(data[field_name])
+        return data
 
 
 class ChatSession(ObjectModel):

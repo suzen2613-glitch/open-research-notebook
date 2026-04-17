@@ -1,0 +1,31 @@
+-- Migration 22: canonical concept/question registries and source relation edges
+
+DEFINE TABLE IF NOT EXISTS concept SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON TABLE concept TYPE string;
+DEFINE FIELD IF NOT EXISTS aliases ON TABLE concept TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS created ON concept DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON concept DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS question SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON TABLE question TYPE string;
+DEFINE FIELD IF NOT EXISTS aliases ON TABLE question TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS created ON question DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON question DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS source_relation SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS source_id ON TABLE source_relation TYPE record<source>;
+DEFINE FIELD IF NOT EXISTS source_title ON TABLE source_relation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS target_source_id ON TABLE source_relation TYPE record<source>;
+DEFINE FIELD IF NOT EXISTS target_source_title ON TABLE source_relation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS relation_type ON TABLE source_relation TYPE string;
+DEFINE FIELD IF NOT EXISTS reason ON TABLE source_relation TYPE string;
+DEFINE FIELD IF NOT EXISTS notebook_ids ON TABLE source_relation TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS wiki_card_id ON TABLE source_relation TYPE option<record<source_wiki_card>>;
+DEFINE FIELD IF NOT EXISTS created ON source_relation DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON source_relation DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_concept_name ON TABLE concept FIELDS name;
+DEFINE INDEX IF NOT EXISTS idx_question_name ON TABLE question FIELDS name;
+DEFINE INDEX IF NOT EXISTS idx_source_relation_source ON TABLE source_relation FIELDS source_id;
+DEFINE INDEX IF NOT EXISTS idx_source_relation_target ON TABLE source_relation FIELDS target_source_id;
+DEFINE INDEX IF NOT EXISTS idx_source_relation_wiki_card ON TABLE source_relation FIELDS wiki_card_id;

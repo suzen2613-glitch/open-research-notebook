@@ -1,0 +1,9 @@
+-- Migration 18: source evidence metadata and notebook note board fields
+
+DEFINE FIELD IF NOT EXISTS section ON TABLE source_embedding TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS char_start ON TABLE source_embedding TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS char_end ON TABLE source_embedding TYPE option<int>;
+
+DEFINE FIELD IF NOT EXISTS board_column ON TABLE note TYPE string VALUE $value OR "inbox";
+DEFINE FIELD IF NOT EXISTS source_id ON TABLE note TYPE option<record<source>>;
+DEFINE FIELD IF NOT EXISTS source_insight_id ON TABLE note TYPE option<record<source_insight>>;

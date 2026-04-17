@@ -18,6 +18,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 const settingsSchema = z.object({
   default_content_processing_engine_doc: z.enum(['auto', 'docling', 'simple']).optional(),
   default_content_processing_engine_url: z.enum(['auto', 'firecrawl', 'jina', 'simple']).optional(),
+  default_pdf_processing_engine: z.enum(['auto', 'marker', 'mineru', 'mineru_cloud']).optional(),
   default_embedding_option: z.enum(['ask', 'always', 'never']).optional(),
   auto_delete_files: z.enum(['yes', 'no']).optional(),
 })
@@ -31,6 +32,7 @@ export function SettingsForm() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     doc: false,
     url: false,
+    pdf: false,
     embedding: false,
     files: false
   })
@@ -47,6 +49,7 @@ export function SettingsForm() {
     defaultValues: {
       default_content_processing_engine_doc: undefined,
       default_content_processing_engine_url: undefined,
+      default_pdf_processing_engine: undefined,
       default_embedding_option: undefined,
       auto_delete_files: undefined,
     }
@@ -58,10 +61,11 @@ export function SettingsForm() {
   }
 
   useEffect(() => {
-    if (settings && settings.default_content_processing_engine_doc && !hasResetForm) {
+    if (settings && !hasResetForm) {
       const formData = {
         default_content_processing_engine_doc: settings.default_content_processing_engine_doc as 'auto' | 'docling' | 'simple',
         default_content_processing_engine_url: settings.default_content_processing_engine_url as 'auto' | 'firecrawl' | 'jina' | 'simple',
+        default_pdf_processing_engine: (settings.default_pdf_processing_engine || 'auto') as 'auto' | 'marker' | 'mineru' | 'mineru_cloud',
         default_embedding_option: settings.default_embedding_option as 'ask' | 'always' | 'never',
         auto_delete_files: settings.auto_delete_files as 'yes' | 'no',
       }
@@ -170,6 +174,42 @@ export function SettingsForm() {
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-2 text-sm text-muted-foreground space-y-2">
                 <p>{t.settings.urlHelp}</p>
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+
+          <div className="space-y-3">
+            <Label htmlFor="pdf_engine">{t.settings.pdfEngine}</Label>
+            <Controller
+              name="default_pdf_processing_engine"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  key={field.value}
+                  name={field.name}
+                  value={field.value || ''}
+                  onValueChange={field.onChange}
+                  disabled={field.disabled || isLoading}
+                >
+                  <SelectTrigger id="pdf_engine" className="w-full">
+                    <SelectValue placeholder={t.settings.pdfEnginePlaceholder} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">{t.settings.autoRecommended}</SelectItem>
+                    <SelectItem value="mineru_cloud">{t.settings.mineruCloud}</SelectItem>
+                    <SelectItem value="marker">{t.settings.marker}</SelectItem>
+                    <SelectItem value="mineru">{t.settings.mineru}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <Collapsible open={expandedSections.pdf} onOpenChange={() => toggleSection('pdf')}>
+              <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <ChevronDownIcon className={`h-4 w-4 transition-transform ${expandedSections.pdf ? 'rotate-180' : ''}`} />
+                {t.settings.helpMeChoose}
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2 text-sm text-muted-foreground space-y-2">
+                <p>{t.settings.pdfHelp}</p>
               </CollapsibleContent>
             </Collapsible>
           </div>

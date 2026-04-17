@@ -4,9 +4,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 # Notebook models
+NotebookType = Literal["academic", "general"]
+NotebookThemeColor = Literal["slate", "blue", "emerald", "amber", "rose", "violet"]
+
+
 class NotebookCreate(BaseModel):
     name: str = Field(..., description="Name of the notebook")
     description: str = Field(default="", description="Description of the notebook")
+    notebook_type: NotebookType = Field(
+        default="academic", description="Notebook experience type"
+    )
+    theme_color: NotebookThemeColor = Field(
+        default="blue", description="Notebook accent color token"
+    )
 
 
 class NotebookUpdate(BaseModel):
@@ -15,6 +25,12 @@ class NotebookUpdate(BaseModel):
     archived: Optional[bool] = Field(
         None, description="Whether the notebook is archived"
     )
+    notebook_type: Optional[NotebookType] = Field(
+        None, description="Notebook experience type"
+    )
+    theme_color: Optional[NotebookThemeColor] = Field(
+        None, description="Notebook accent color token"
+    )
 
 
 class NotebookResponse(BaseModel):
@@ -22,10 +38,35 @@ class NotebookResponse(BaseModel):
     name: str
     description: str
     archived: bool
+    notebook_type: NotebookType = "academic"
+    theme_color: NotebookThemeColor = "blue"
     created: str
     updated: str
     source_count: int
     note_count: int
+
+
+class DuplicateSourceEntryResponse(BaseModel):
+    source_id: str
+    title: Optional[str] = None
+    created: str
+    updated: str
+
+
+class DuplicateSourceGroupResponse(BaseModel):
+    normalized_title: str
+    keep_source_id: str
+    keep_title: Optional[str] = None
+    duplicate_count: int
+    duplicates: List[DuplicateSourceEntryResponse] = Field(default_factory=list)
+
+
+class DuplicateCleanupResponse(BaseModel):
+    duplicate_groups: List[DuplicateSourceGroupResponse] = Field(default_factory=list)
+    removed_source_ids: List[str] = Field(default_factory=list)
+    unlinked_source_ids: List[str] = Field(default_factory=list)
+    removed_count: int = 0
+    unlinked_count: int = 0
 
 
 # Search models
@@ -175,8 +216,17 @@ class NoteCreate(BaseModel):
     title: Optional[str] = Field(None, description="Note title")
     content: str = Field(..., description="Note content")
     note_type: Optional[str] = Field("human", description="Type of note (human, ai)")
+    board_column: Optional[Literal["inbox", "working", "final"]] = Field(
+        "inbox", description="Note board stage"
+    )
     notebook_id: Optional[str] = Field(
         None, description="Notebook ID to add the note to"
+    )
+    source_id: Optional[str] = Field(
+        None, description="Linked source ID for traceability"
+    )
+    source_insight_id: Optional[str] = Field(
+        None, description="Linked source insight ID for traceability"
     )
 
 
@@ -184,6 +234,9 @@ class NoteUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Note title")
     content: Optional[str] = Field(None, description="Note content")
     note_type: Optional[str] = Field(None, description="Type of note (human, ai)")
+    board_column: Optional[Literal["inbox", "working", "final"]] = Field(
+        None, description="Note board stage"
+    )
 
 
 class NoteResponse(BaseModel):
@@ -191,6 +244,9 @@ class NoteResponse(BaseModel):
     title: Optional[str]
     content: Optional[str]
     note_type: Optional[str]
+    board_column: Literal["inbox", "working", "final"] = "inbox"
+    source_id: Optional[str] = None
+    source_insight_id: Optional[str] = None
     created: str
     updated: str
     command_id: Optional[str] = None
@@ -259,6 +315,7 @@ class RebuildStatusResponse(BaseModel):
 class SettingsResponse(BaseModel):
     default_content_processing_engine_doc: Optional[str] = None
     default_content_processing_engine_url: Optional[str] = None
+    default_pdf_processing_engine: Optional[str] = None
     default_embedding_option: Optional[str] = None
     auto_delete_files: Optional[str] = None
     youtube_preferred_languages: Optional[List[str]] = None
@@ -267,6 +324,7 @@ class SettingsResponse(BaseModel):
 class SettingsUpdate(BaseModel):
     default_content_processing_engine_doc: Optional[str] = None
     default_content_processing_engine_url: Optional[str] = None
+    default_pdf_processing_engine: Optional[str] = None
     default_embedding_option: Optional[str] = None
     auto_delete_files: Optional[str] = None
     youtube_preferred_languages: Optional[List[str]] = None
@@ -290,7 +348,10 @@ class SourceCreate(BaseModel):
     # Required fields
     type: str = Field(..., description="Source type: link, upload, or text")
     url: Optional[str] = Field(None, description="URL for link type")
-    file_path: Optional[str] = Field(None, description="File path for upload type")
+    file_path: Optional[str] = Field(
+        None,
+        description="Server-side file path for upload type (must be inside uploads directory)",
+    )
     content: Optional[str] = Field(None, description="Text content for text type")
     title: Optional[str] = Field(None, description="Source title")
     transformations: Optional[List[str]] = Field(
@@ -328,6 +389,8 @@ class SourceCreate(BaseModel):
 class SourceUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Source title")
     topics: Optional[List[str]] = Field(None, description="Source topics")
+    asset: Optional[AssetModel] = Field(None, description="Source asset metadata")
+    full_text: Optional[str] = Field(None, description="Source full markdown text")
 
 
 class SourceResponse(BaseModel):
@@ -345,6 +408,7 @@ class SourceResponse(BaseModel):
     command_id: Optional[str] = None
     status: Optional[str] = None
     processing_info: Optional[Dict] = None
+    error_message: Optional[str] = None
     # Notebook associations
     notebooks: Optional[List[str]] = None
 
@@ -364,6 +428,31 @@ class SourceListResponse(BaseModel):
     command_id: Optional[str] = None
     status: Optional[str] = None
     processing_info: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+
+
+class SourceReferenceMatchResponse(BaseModel):
+    source_id: str
+    source_title: Optional[str] = None
+    raw_reference: Optional[str] = None
+    confidence: float = 1.0
+    notebook_ids: List[str] = Field(default_factory=list)
+
+
+class SourceReferenceCandidateResponse(BaseModel):
+    title: Optional[str] = None
+    normalized_title: Optional[str] = None
+    raw_reference: str
+
+
+class SourceReferenceConnectionsResponse(BaseModel):
+    source_id: str
+    source_title: Optional[str] = None
+    notebook_scope_ids: List[str] = Field(default_factory=list)
+    references_extracted: int = 0
+    citations_in_notebook: List[SourceReferenceMatchResponse] = Field(default_factory=list)
+    cited_by_in_notebook: List[SourceReferenceMatchResponse] = Field(default_factory=list)
+    reference_candidates: List[SourceReferenceCandidateResponse] = Field(default_factory=list)
 
 
 # Context API models
@@ -396,6 +485,228 @@ class SourceInsightResponse(BaseModel):
     source_id: str
     insight_type: str
     content: str
+    transformation_id: Optional[str] = None
+    prompt_title: Optional[str] = None
+    can_refresh: bool = False
+    created: str
+    updated: str
+
+
+class NotebookSourceSummaryResponse(BaseModel):
+    source_id: str
+    source_title: Optional[str] = None
+    source_created: str
+    source_updated: str
+    summary: Optional[SourceInsightResponse] = None
+
+
+class RelatedSourceResponse(BaseModel):
+    source_id: str
+    source_title: Optional[str] = None
+    relation_type: str
+    reason: str
+
+
+class RelationEdgeResponse(BaseModel):
+    source_id: str
+    relation_type: str
+    reason: str
+
+
+class EvidenceSnippetResponse(BaseModel):
+    embedding_id: str
+    section: Optional[str] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
+    excerpt: str
+    reason: str
+
+
+class SourceWikiCardResponse(BaseModel):
+    id: str
+    source_id: str
+    notebook_ids: List[str] = Field(default_factory=list)
+    source_title: Optional[str] = None
+    title: Optional[str] = None
+    short_title: Optional[str] = None
+    canonical_title: Optional[str] = None
+    slug: Optional[str] = None
+    authors: List[str] = Field(default_factory=list)
+    year: Optional[int] = None
+    venue: Optional[str] = None
+    paper_type: Optional[
+        Literal[
+            "review",
+            "foundational",
+            "method",
+            "application",
+            "benchmark",
+            "survey",
+        ]
+    ] = None
+    domains: List[str] = Field(default_factory=list)
+    summary_text: Optional[str] = None
+    research_context: Optional[str] = None
+    claimed_gap: Optional[str] = None
+    positioning_summary: Optional[str] = None
+    topics: List[str] = Field(default_factory=list)
+    methods: List[str] = Field(default_factory=list)
+    problems: List[str] = Field(default_factory=list)
+    contributions: List[str] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+    keywords: List[str] = Field(default_factory=list)
+    moc_groups: List[str] = Field(default_factory=list)
+    recommended_entry_points: List[str] = Field(default_factory=list)
+    is_key_paper: bool = False
+    concept_ids: List[str] = Field(default_factory=list)
+    concept_names: List[str] = Field(default_factory=list)
+    core_concept_ids: List[str] = Field(default_factory=list)
+    question_ids: List[str] = Field(default_factory=list)
+    question_names: List[str] = Field(default_factory=list)
+    related_sources: List[RelatedSourceResponse] = Field(default_factory=list)
+    relation_edges: List[RelationEdgeResponse] = Field(default_factory=list)
+    display_language: Optional[Literal["en", "zh", "mixed", "unknown"]] = None
+    canonical_language: Optional[Literal["en", "zh", "mixed", "unknown"]] = None
+    extraction_confidence: Optional[float] = None
+    evidence_snippets: List[EvidenceSnippetResponse] = Field(default_factory=list)
+    obsidian_markdown: Optional[str] = None
+    obsidian_frontmatter: Optional[Dict[str, Any]] = None
+    summary_source_insight_id: Optional[str] = None
+    prompt_snapshot: Optional[str] = None
+    model_id: Optional[str] = None
+    command_id: Optional[str] = None
+    status: Literal["pending", "completed", "failed"]
+    error_message: Optional[str] = None
+    created: str
+    updated: str
+
+
+class NotebookMocSectionResponse(BaseModel):
+    id: str
+    label: str
+    count: int
+    wiki_card_ids: List[str] = Field(default_factory=list)
+    source_ids: List[str] = Field(default_factory=list)
+
+
+class NotebookMocResponse(BaseModel):
+    notebook_id: str
+    paper_types: List[NotebookMocSectionResponse] = Field(default_factory=list)
+    domains: List[NotebookMocSectionResponse] = Field(default_factory=list)
+    moc_groups: List[NotebookMocSectionResponse] = Field(default_factory=list)
+    key_papers: List[SourceWikiCardResponse] = Field(default_factory=list)
+    recently_updated: List[SourceWikiCardResponse] = Field(default_factory=list)
+
+
+class NotebookMocLiteResponse(BaseModel):
+    notebook_id: str
+    paper_types: List[NotebookMocSectionResponse] = Field(default_factory=list)
+    domains: List[NotebookMocSectionResponse] = Field(default_factory=list)
+    moc_groups: List[NotebookMocSectionResponse] = Field(default_factory=list)
+    key_paper_ids: List[str] = Field(default_factory=list)
+    recently_updated_ids: List[str] = Field(default_factory=list)
+
+
+class SourceWikiCardSlotResponse(BaseModel):
+    source_id: str
+    source_title: Optional[str] = None
+    source_created: str
+    source_updated: str
+    status: Literal["missing", "pending", "completed", "failed"]
+    wiki_card: Optional[SourceWikiCardResponse] = None
+
+
+class ConceptResponse(BaseModel):
+    id: str
+    name: str
+    aliases: List[str] = Field(default_factory=list)
+    canonical_language: Optional[Literal["en", "zh", "mixed", "unknown"]] = None
+    source_ids: List[str] = Field(default_factory=list)
+    source_titles: List[str] = Field(default_factory=list)
+    wiki_card_ids: List[str] = Field(default_factory=list)
+
+
+class QuestionResponse(BaseModel):
+    id: str
+    name: str
+    aliases: List[str] = Field(default_factory=list)
+    canonical_language: Optional[Literal["en", "zh", "mixed", "unknown"]] = None
+    source_ids: List[str] = Field(default_factory=list)
+    source_titles: List[str] = Field(default_factory=list)
+    wiki_card_ids: List[str] = Field(default_factory=list)
+
+
+class SourceRelationResponse(BaseModel):
+    id: str
+    source_id: str
+    source_title: Optional[str] = None
+    target_source_id: str
+    target_source_title: Optional[str] = None
+    relation_type: str
+    reason: str
+    notebook_ids: List[str] = Field(default_factory=list)
+    wiki_card_id: Optional[str] = None
+    created: str
+    updated: str
+
+
+class CreateSourceWikiCardRequest(BaseModel):
+    model_id: Optional[str] = Field(
+        None, description="Optional language model override for wiki card generation"
+    )
+
+
+class RefreshWikiCardRequest(BaseModel):
+    model_id: Optional[str] = Field(
+        None, description="Optional language model override for wiki card refresh"
+    )
+
+
+class WikiCardCreationResponse(BaseModel):
+    status: Literal["pending"] = "pending"
+    message: str = "Wiki card generation started"
+    source_id: str
+    wiki_card_id: str
+    command_id: Optional[str] = None
+
+
+class WikiCardSearchRequest(BaseModel):
+    query: str = Field(..., description="Natural-language query to embed and match against wiki cards")
+    limit: int = Field(10, ge=1, le=50, description="Maximum number of cards to return")
+    minimum_score: float = Field(
+        0.2, ge=0.0, le=1.0, description="Minimum cosine similarity to include"
+    )
+    notebook_id: Optional[str] = Field(
+        None, description="If provided, restrict results to wiki cards in this notebook"
+    )
+
+
+class WikiCardSearchResult(BaseModel):
+    id: str
+    source_id: Optional[str] = None
+    title: Optional[str] = None
+    short_title: Optional[str] = None
+    summary_text: Optional[str] = None
+    keywords: List[str] = Field(default_factory=list)
+    domains: List[str] = Field(default_factory=list)
+    paper_type: Optional[str] = None
+    is_key_paper: bool = False
+    similarity: float
+
+
+class WikiCardSearchResponse(BaseModel):
+    results: List[WikiCardSearchResult]
+    total_count: int
+
+
+class SourceEmbeddingResponse(BaseModel):
+    id: str
+    source_id: str
+    order: Optional[int] = None
+    section: Optional[str] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
+    content: str
     created: str
     updated: str
 
@@ -406,8 +717,21 @@ class InsightCreationResponse(BaseModel):
     status: Literal["pending"] = "pending"
     message: str = "Insight generation started"
     source_id: str
-    transformation_id: str
+    transformation_id: Optional[str] = None
+    insight_title: Optional[str] = None
     command_id: Optional[str] = None
+
+
+class RefreshInsightRequest(BaseModel):
+    model_id: Optional[str] = Field(
+        None, description="Optional language model override for the refresh run"
+    )
+
+
+class CreateSourceSummaryRequest(BaseModel):
+    model_id: Optional[str] = Field(
+        None, description="Optional language model override for summary generation"
+    )
 
 
 class SaveAsNoteRequest(BaseModel):
@@ -417,10 +741,30 @@ class SaveAsNoteRequest(BaseModel):
 class CreateSourceInsightRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
-    transformation_id: str = Field(..., description="ID of transformation to apply")
+    transformation_id: Optional[str] = Field(
+        None, description="ID of transformation to apply"
+    )
+    title: Optional[str] = Field(
+        None, description="Insight title when using a custom inline prompt"
+    )
+    prompt: Optional[str] = Field(
+        None, description="Custom inline prompt for generating the insight"
+    )
     model_id: Optional[str] = Field(
         None, description="Model ID (uses default if not provided)"
     )
+
+    @model_validator(mode="after")
+    def validate_prompt_source(self):
+        has_transformation = bool(self.transformation_id)
+        has_custom_prompt = bool(self.title and self.prompt)
+
+        if has_transformation == has_custom_prompt:
+            raise ValueError(
+                "Provide either transformation_id or both title and prompt"
+            )
+
+        return self
 
 
 # Source status response
@@ -431,6 +775,7 @@ class SourceStatusResponse(BaseModel):
         None, description="Detailed processing information"
     )
     command_id: Optional[str] = Field(None, description="Command ID if available")
+    error_message: Optional[str] = Field(None, description="Processing error message")
 
 
 # Error response

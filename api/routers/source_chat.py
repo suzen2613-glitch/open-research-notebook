@@ -51,6 +51,9 @@ class ContextIndicator(BaseModel):
     notes: List[str] = Field(
         default_factory=list, description="Note IDs used in context"
     )
+    evidence: List[str] = Field(
+        default_factory=list, description="Source evidence chunk IDs used in context"
+    )
 
 class SourceChatSessionResponse(BaseModel):
     id: str = Field(..., description="Session ID")
@@ -263,6 +266,7 @@ async def get_source_chat_session(
                     sources=context_data.get("sources", []),
                     insights=context_data.get("insights", []),
                     notes=context_data.get("notes", []),
+                    evidence=context_data.get("evidence", []),
                 )
 
         return SourceChatSessionWithMessagesResponse(

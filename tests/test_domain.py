@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from open_notebook.ai.models import ModelManager
 from open_notebook.domain.base import RecordModel
 from open_notebook.domain.content_settings import ContentSettings
-from open_notebook.domain.notebook import Asset, Note, Notebook, Source
+from open_notebook.domain.notebook import Asset, Note, Notebook, Source, SourceWikiCard
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import InvalidInputError
 from open_notebook.podcasts.models import EpisodeProfile, SpeakerProfile
@@ -118,10 +118,151 @@ class TestSourceDomain:
         source2 = Source(title="Test", command=None)
         assert source2.command is None
 
+
+class TestSourceWikiCardDomain:
+    """Test suite for SourceWikiCard sanitization."""
+
+    def test_wiki_card_relation_fields_are_sanitized_on_init(self):
+        """Malformed relation entries should be dropped during model parsing."""
+        card = SourceWikiCard(
+            source="source:123",
+            related_sources=[
+                {},
+                {
+                    "source_id": "source:alpha",
+                    "source_title": "Alpha Paper",
+                    "relation_type": "extends",
+                    "reason": "Improves adaptive sampling",
+                },
+                {
+                    "source_id": "source:alpha",
+                    "source_title": "Alpha Paper",
+                    "relation_type": "extends",
+                    "reason": "Improves adaptive sampling",
+                },
+            ],
+            relation_edges=[
+                {},
+                {
+                    "source_id": "source:alpha",
+                    "relation_type": "extends",
+                    "reason": "Improves adaptive sampling",
+                },
+            ],
+            obsidian_frontmatter={
+                "title": "Alpha",
+                "relation_edges": [
+                    {},
+                    {
+                        "source_id": "source:alpha",
+                        "relation_type": "extends",
+                        "reason": "Improves adaptive sampling",
+                    },
+                ],
+            },
+        )
+
+        assert card.related_sources == [
+            {
+                "source_id": "source:alpha",
+                "source_title": "Alpha Paper",
+                "relation_type": "extends",
+                "reason": "Improves adaptive sampling",
+            }
+        ]
+        assert card.relation_edges == [
+            {
+                "source_id": "source:alpha",
+                "relation_type": "extends",
+                "reason": "Improves adaptive sampling",
+            }
+        ]
+        assert card.obsidian_frontmatter == {
+            "title": "Alpha",
+            "relation_edges": [
+                {
+                    "source_id": "source:alpha",
+                    "relation_type": "extends",
+                    "reason": "Improves adaptive sampling",
+                }
+            ],
+        }
+
+    def test_wiki_card_prepare_save_data_re_sanitizes_assignment(self):
+        """Save preparation should sanitize assignments because validate_assignment is off."""
+        card = SourceWikiCard(source="source:123")
+        card.related_sources = [
+            {},
+            {
+                "source_id": "source:beta",
+                "source_title": "Beta Paper",
+                "relation_type": "related_work",
+                "reason": "Addresses the same benchmark",
+            },
+        ]
+        card.relation_edges = [
+            {},
+            {
+                "source_id": "source:beta",
+                "relation_type": "related_work",
+                "reason": "Addresses the same benchmark",
+            },
+        ]
+        card.obsidian_frontmatter = {
+            "relation_edges": [
+                {},
+                {
+                    "source_id": "source:beta",
+                    "relation_type": "related_work",
+                    "reason": "Addresses the same benchmark",
+                },
+            ]
+        }
+
+        prepared = card._prepare_save_data()
+
+        assert prepared["related_sources"] == [
+            {
+                "source_id": "source:beta",
+                "source_title": "Beta Paper",
+                "relation_type": "related_work",
+                "reason": "Addresses the same benchmark",
+            }
+        ]
+        assert prepared["relation_edges"] == [
+            {
+                "source_id": "source:beta",
+                "relation_type": "related_work",
+                "reason": "Addresses the same benchmark",
+            }
+        ]
+        assert prepared["obsidian_frontmatter"] == {
+            "relation_edges": [
+                {
+                    "source_id": "source:beta",
+                    "relation_type": "related_work",
+                    "reason": "Addresses the same benchmark",
+                }
+            ]
+        }
+
         # Test command is included in save data prep
         source3 = Source(id="source:123", title="Test", command="command:456")
         save_data = source3._prepare_save_data()
         assert "command" in save_data
+
+    def test_wiki_card_registry_ids_are_normalized(self):
+        """Bracketed Surreal record ids should be normalized for wiki card exports."""
+        card = SourceWikiCard(
+            source="source:123",
+            concept_ids=["concept:⟨pinn\\⟩"],
+            question_ids=["question:⟨convergence-issues\\⟩"],
+            notebook_ids=["notebook:⟨alpha\\⟩"],
+        )
+
+        assert card.concept_ids == ["concept:pinn"]
+        assert card.question_ids == ["question:convergence-issues"]
+        assert card.notebook_ids == ["notebook:alpha"]
 
     @pytest.mark.asyncio
     async def test_source_delete_cleans_up_file(self):

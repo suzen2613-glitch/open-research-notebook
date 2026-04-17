@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 
-export type ModalType = 'source' | 'note' | 'insight'
+export type ModalType = 'source' | 'note' | 'insight' | 'evidence'
 
 export function useModalManager() {
   const router = useRouter()

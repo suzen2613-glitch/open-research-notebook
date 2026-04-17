@@ -4,6 +4,9 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from api.models import (
+    DuplicateCleanupResponse,
+    DuplicateSourceEntryResponse,
+    DuplicateSourceGroupResponse,
     NotebookCreate,
     NotebookDeletePreview,
     NotebookDeleteResponse,
@@ -13,8 +16,35 @@ from api.models import (
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook, Source
 from open_notebook.exceptions import InvalidInputError
+from open_notebook.services.source_dedupe import (
+    analyze_notebook_duplicates,
+    cleanup_notebook_duplicates,
+)
 
 router = APIRouter()
+ALLOWED_NOTEBOOK_ORDER_BY = {
+    "created asc",
+    "created desc",
+    "updated asc",
+    "updated desc",
+    "name asc",
+    "name desc",
+}
+
+
+def _build_notebook_response(nb: dict, *, source_count: int | None = None, note_count: int | None = None) -> NotebookResponse:
+    return NotebookResponse(
+        id=str(nb.get("id", "")),
+        name=nb.get("name", ""),
+        description=nb.get("description", ""),
+        archived=nb.get("archived", False),
+        notebook_type=nb.get("notebook_type") or "academic",
+        theme_color=nb.get("theme_color") or "blue",
+        created=str(nb.get("created", "")),
+        updated=str(nb.get("updated", "")),
+        source_count=source_count if source_count is not None else nb.get("source_count", 0),
+        note_count=note_count if note_count is not None else nb.get("note_count", 0),
+    )
 
 
 @router.get("/notebooks", response_model=List[NotebookResponse])
@@ -24,13 +54,23 @@ async def get_notebooks(
 ):
     """Get all notebooks with optional filtering and ordering."""
     try:
+        normalized_order_by = " ".join(order_by.lower().split())
+        if normalized_order_by not in ALLOWED_NOTEBOOK_ORDER_BY:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "order_by must be one of: created asc|desc, updated asc|desc, "
+                    "name asc|desc"
+                ),
+            )
+
         # Build the query with counts
         query = f"""
             SELECT *,
             count(<-reference.in) as source_count,
             count(<-artifact.in) as note_count
             FROM notebook
-            ORDER BY {order_by}
+            ORDER BY {normalized_order_by}
         """
 
         result = await repo_query(query)
@@ -39,19 +79,7 @@ async def get_notebooks(
         if archived is not None:
             result = [nb for nb in result if nb.get("archived") == archived]
 
-        return [
-            NotebookResponse(
-                id=str(nb.get("id", "")),
-                name=nb.get("name", ""),
-                description=nb.get("description", ""),
-                archived=nb.get("archived", False),
-                created=str(nb.get("created", "")),
-                updated=str(nb.get("updated", "")),
-                source_count=nb.get("source_count", 0),
-                note_count=nb.get("note_count", 0),
-            )
-            for nb in result
-        ]
+        return [_build_notebook_response(nb) for nb in result]
     except Exception as e:
         logger.error(f"Error fetching notebooks: {str(e)}")
         raise HTTPException(
@@ -66,18 +94,24 @@ async def create_notebook(notebook: NotebookCreate):
         new_notebook = Notebook(
             name=notebook.name,
             description=notebook.description,
+            notebook_type=notebook.notebook_type,
+            theme_color=notebook.theme_color,
         )
         await new_notebook.save()
 
-        return NotebookResponse(
-            id=new_notebook.id or "",
-            name=new_notebook.name,
-            description=new_notebook.description,
-            archived=new_notebook.archived or False,
-            created=str(new_notebook.created),
-            updated=str(new_notebook.updated),
-            source_count=0,  # New notebook has no sources
-            note_count=0,  # New notebook has no notes
+        return _build_notebook_response(
+            {
+                "id": new_notebook.id or "",
+                "name": new_notebook.name,
+                "description": new_notebook.description,
+                "archived": new_notebook.archived or False,
+                "notebook_type": new_notebook.notebook_type,
+                "theme_color": new_notebook.theme_color,
+                "created": str(new_notebook.created),
+                "updated": str(new_notebook.updated),
+            },
+            source_count=0,
+            note_count=0,
         )
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -134,16 +168,7 @@ async def get_notebook(notebook_id: str):
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         nb = result[0]
-        return NotebookResponse(
-            id=str(nb.get("id", "")),
-            name=nb.get("name", ""),
-            description=nb.get("description", ""),
-            archived=nb.get("archived", False),
-            created=str(nb.get("created", "")),
-            updated=str(nb.get("updated", "")),
-            source_count=nb.get("source_count", 0),
-            note_count=nb.get("note_count", 0),
-        )
+        return _build_notebook_response(nb)
     except HTTPException:
         raise
     except Exception as e:
@@ -168,6 +193,10 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             notebook.description = notebook_update.description
         if notebook_update.archived is not None:
             notebook.archived = notebook_update.archived
+        if notebook_update.notebook_type is not None:
+            notebook.notebook_type = notebook_update.notebook_type
+        if notebook_update.theme_color is not None:
+            notebook.theme_color = notebook_update.theme_color
 
         await notebook.save()
 
@@ -182,25 +211,20 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
 
         if result:
             nb = result[0]
-            return NotebookResponse(
-                id=str(nb.get("id", "")),
-                name=nb.get("name", ""),
-                description=nb.get("description", ""),
-                archived=nb.get("archived", False),
-                created=str(nb.get("created", "")),
-                updated=str(nb.get("updated", "")),
-                source_count=nb.get("source_count", 0),
-                note_count=nb.get("note_count", 0),
-            )
+            return _build_notebook_response(nb)
 
         # Fallback if query fails
-        return NotebookResponse(
-            id=notebook.id or "",
-            name=notebook.name,
-            description=notebook.description,
-            archived=notebook.archived or False,
-            created=str(notebook.created),
-            updated=str(notebook.updated),
+        return _build_notebook_response(
+            {
+                "id": notebook.id or "",
+                "name": notebook.name,
+                "description": notebook.description,
+                "archived": notebook.archived or False,
+                "notebook_type": notebook.notebook_type,
+                "theme_color": notebook.theme_color,
+                "created": str(notebook.created),
+                "updated": str(notebook.updated),
+            },
             source_count=0,
             note_count=0,
         )
@@ -231,7 +255,7 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
 
         # Check if reference already exists (idempotency)
         existing_ref = await repo_query(
-            "SELECT * FROM reference WHERE out = $source_id AND in = $notebook_id",
+            "SELECT * FROM reference WHERE in = $source_id AND out = $notebook_id",
             {
                 "notebook_id": ensure_record_id(notebook_id),
                 "source_id": ensure_record_id(source_id),
@@ -271,7 +295,7 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
 
         # Delete the reference record linking source to notebook
         await repo_query(
-            "DELETE FROM reference WHERE out = $notebook_id AND in = $source_id",
+            "DELETE FROM reference WHERE in = $source_id AND out = $notebook_id",
             {
                 "notebook_id": ensure_record_id(notebook_id),
                 "source_id": ensure_record_id(source_id),
@@ -287,6 +311,84 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
         )
         raise HTTPException(
             status_code=500, detail=f"Error removing source from notebook: {str(e)}"
+        )
+
+
+@router.get(
+    "/notebooks/{notebook_id}/duplicate-sources",
+    response_model=List[DuplicateSourceGroupResponse],
+)
+async def get_notebook_duplicate_sources(notebook_id: str):
+    """List duplicate source groups within a notebook based on normalized paper title."""
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        duplicates = await analyze_notebook_duplicates(notebook_id)
+        return [
+            DuplicateSourceGroupResponse(
+                normalized_title=group["normalized_title"],
+                keep_source_id=group["keep_source_id"],
+                keep_title=group.get("keep_title"),
+                duplicate_count=group["duplicate_count"],
+                duplicates=[
+                    DuplicateSourceEntryResponse(**entry)
+                    for entry in group.get("duplicates", [])
+                ],
+            )
+            for group in duplicates
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error scanning duplicate sources for notebook {notebook_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error scanning duplicate sources: {str(e)}"
+        )
+
+
+@router.post(
+    "/notebooks/{notebook_id}/duplicate-sources/cleanup",
+    response_model=DuplicateCleanupResponse,
+)
+async def cleanup_duplicate_sources(notebook_id: str):
+    """Remove duplicate sources from a notebook, deleting exclusive duplicates and unlinking shared ones."""
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        result = await cleanup_notebook_duplicates(notebook_id)
+        return DuplicateCleanupResponse(
+            duplicate_groups=[
+                DuplicateSourceGroupResponse(
+                    normalized_title=group["normalized_title"],
+                    keep_source_id=group["keep_source_id"],
+                    keep_title=group.get("keep_title"),
+                    duplicate_count=group["duplicate_count"],
+                    duplicates=[
+                        DuplicateSourceEntryResponse(**entry)
+                        for entry in group.get("duplicates", [])
+                    ],
+                )
+                for group in result["groups"]
+            ],
+            removed_source_ids=result["removed_source_ids"],
+            unlinked_source_ids=result["unlinked_source_ids"],
+            removed_count=result["removed_count"],
+            unlinked_count=result["unlinked_count"],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error cleaning duplicate sources for notebook {notebook_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error cleaning duplicate sources: {str(e)}"
         )
 
 

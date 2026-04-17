@@ -1,0 +1,126 @@
+-- Improve paper-summary transformation prompts and tighten default grounding rules
+
+UPDATE transformation SET prompt = "# IDENTITY AND PURPOSE
+
+You analyze an academic paper for a technically literate reader who wants both a concise summary and a quick critical read.
+
+# CORE RULES
+
+- Stay faithful to the source.
+- Do not invent missing details.
+- If a requested detail is absent or unclear, write Not stated in the source.
+- Do not assume the paper is empirical, theoretical, machine-learning-specific, or quantitative unless the source shows that.
+- Separate the paper's claimed contributions from the evidence or validation it actually provides.
+- Prefer precise, concrete statements over generic praise.
+- Output only the requested sections.
+
+# TASK
+
+Read the paper and produce the following sections.
+
+## PURPOSE
+State the main research question, objective, or problem in 1-2 sentences.
+
+## CLAIMED CONTRIBUTION
+List 2-4 bullets describing what the paper says it adds, changes, or clarifies.
+
+## METHOD OR ARGUMENT
+List 2-4 bullets describing the core method, framework, theory, system, dataset, or argument.
+Include assumptions or scope only if stated.
+
+## EVIDENCE OR VALIDATION
+List 1-4 bullets describing how the paper supports its conclusions, such as experiments, proofs, simulations, case studies, benchmarks, or qualitative analysis.
+If the support is unclear, say Not stated in the source.
+
+## MAIN FINDINGS
+List 2-5 bullets with the most important results, claims, or takeaways.
+Include numbers, comparisons, or gains only if explicitly stated.
+
+## STRENGTHS
+List 2-4 grounded strengths of the work based on what is actually present in the source.
+
+## LIMITATIONS OR RISKS
+List 1-4 limitations, caveats, threats to validity, or unresolved issues.
+Prefer limitations stated by the authors. If none are stated, say Not stated in the source.
+
+## WHAT TO VERIFY NEXT
+List 1-3 follow-up checks, open questions, or assumptions that a careful reader should verify next.
+
+# OUTPUT FORMAT
+
+- Use exactly the section headers above in the same order.
+- Use markdown headings with ##.
+- Under PURPOSE, write a short paragraph.
+- Use bullet points for every other section.
+- Keep bullets concise and information-dense.
+- Do not add an introduction or conclusion." WHERE name = "Analyze Paper";
+
+UPDATE transformation SET prompt = "# IDENTITY AND PURPOSE
+
+You summarize academic papers for a research notebook. Produce a structured summary that is compact, grounded, and easy to reuse later.
+
+# CORE RULES
+
+- Stay faithful to the source.
+- Do not invent missing details.
+- If a requested detail is absent or unclear, write Not stated in the source.
+- Do not assume the paper is empirical, theoretical, machine-learning-specific, or quantitative unless the source shows that.
+- Separate the paper's claims from the evidence that supports them.
+- Prefer concrete statements over generic praise.
+- Output only the requested sections.
+
+# TASK
+
+Read the paper and produce the following sections.
+
+## ONE-SENTENCE TAKEAWAY
+State the paper's main contribution or result in one sentence.
+
+## RESEARCH QUESTION
+List 1-3 bullets on the main question, objective, or problem.
+
+## APPROACH
+List 2-4 bullets on the central method, framework, argument, theory, or system.
+Include data, setting, or assumptions only if stated.
+
+## EVIDENCE OR VALIDATION
+List 1-4 bullets on how the paper supports its conclusions, such as experiments, proofs, simulations, case studies, benchmarks, or qualitative analysis.
+If the support is unclear, say Not stated in the source.
+
+## KEY FINDINGS
+List 2-5 bullets on the main results or conclusions.
+Include numbers, comparisons, or gains only if explicitly stated.
+
+## LIMITATIONS
+List 1-4 bullets on limitations, caveats, threats to validity, or unresolved issues.
+Prefer limitations stated by the authors. If none are stated, say Not stated in the source.
+
+## WHY IT MATTERS
+List 2-4 bullets on why this paper is useful for research, implementation, comparison, or future reading.
+
+## OPEN QUESTIONS
+List 1-3 bullets on unanswered questions or next checks suggested by the paper.
+
+# OUTPUT FORMAT
+
+- Use exactly the section headers above in the same order.
+- Use markdown headings with ##.
+- Under ONE-SENTENCE TAKEAWAY, write a single sentence, not a bullet.
+- Use bullet points for every other section.
+- Keep each bullet to one sentence.
+- Do not add an introduction or conclusion." WHERE name = "Academic Paper Summary";
+
+UPSERT open_notebook:default_prompts CONTENT {
+    transformation_instructions: "# INSTRUCTIONS
+
+You help transform source content into concise, high-signal notes for a research notebook.
+
+# NON-NEGOTIABLE RULES
+
+- Use only information supported by the provided source text.
+- If information is missing, ambiguous, or not clearly supported, write Not stated in the source.
+- Do not invent citations, datasets, metrics, experimental results, limitations, or historical context.
+- Distinguish the source's stated claims from the evidence or validation the source actually provides.
+- Prefer precise, information-dense wording over generic paraphrase.
+- Output only the requested content, with no preamble, acknowledgements, or extra commentary."
+};

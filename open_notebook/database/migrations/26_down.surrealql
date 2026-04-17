@@ -1,0 +1,5 @@
+-- Migration 26 down: remove wiki-card introduction-derived positioning fields
+
+REMOVE FIELD research_context ON TABLE source_wiki_card;
+REMOVE FIELD claimed_gap ON TABLE source_wiki_card;
+REMOVE FIELD positioning_summary ON TABLE source_wiki_card;
