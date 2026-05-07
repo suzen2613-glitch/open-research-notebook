@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { SimulationNodeDatum, SimulationLinkDatum } from 'd3-force'
+import type { SimulationNodeDatum } from 'd3-force'
 import type { Edge, Node } from 'reactflow'
 import type { SourceWikiCardResponse } from '@/lib/api/wiki-cards'
 import type { PaperType, RelationType } from './graph-constants'

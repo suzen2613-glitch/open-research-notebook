@@ -7,7 +7,6 @@ import {
   PAPER_NODE_HEIGHT,
   CONCEPT_BASE_SIZE,
   CONCEPT_MAX_SIZE,
-  type PaperType,
 } from './graph-constants'
 import { normalizePaperType } from './graph-helpers'
 import type { LabelRenderers } from './graph-types'

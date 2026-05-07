@@ -96,5 +96,6 @@ export function MarkdownImage({
     return null
   }
 
+  // eslint-disable-next-line @next/next/no-img-element
   return <img {...props} src={resolvedSrc} alt={alt} loading={props.loading ?? 'lazy'} />
 }

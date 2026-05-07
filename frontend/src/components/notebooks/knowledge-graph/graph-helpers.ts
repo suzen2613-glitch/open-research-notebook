@@ -1,5 +1,5 @@
 import type { SourceWikiCardResponse } from '@/lib/api/wiki-cards'
-import type { PaperType, RelationType } from './graph-constants'
+import type { PaperType } from './graph-constants'
 import { PAPER_TYPE_STYLES, ALL_RELATION_TYPES } from './graph-constants'
 import type { ConceptEntry, Filters } from './graph-types'
 

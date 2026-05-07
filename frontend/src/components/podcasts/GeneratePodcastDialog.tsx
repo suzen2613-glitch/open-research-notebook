@@ -9,7 +9,7 @@ import { useEpisodeProfiles, useGeneratePodcast } from '@/lib/hooks/use-podcasts
 import { chatApi } from '@/lib/api/chat'
 import { sourcesApi } from '@/lib/api/sources'
 import { notesApi } from '@/lib/api/notes'
-import { BuildContextRequest, NoteResponse, NotebookResponse, SourceListResponse } from '@/lib/types/api'
+import { BuildContextRequest, NoteResponse, SourceListResponse } from '@/lib/types/api'
 import { PodcastGenerationRequest } from '@/lib/types/podcasts'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
@@ -109,8 +109,9 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
   // Stable set of notebook IDs that are currently fetching sources
   const fetchingNotebookIds = useMemo(() => {
     const ids = new Set<string>()
+    const fetchingFlags = fetchingKey.split('')
     notebooks.forEach((notebook, index) => {
-      if (sourcesQueries[index]?.isFetching) {
+      if (fetchingFlags[index] === '1') {
         ids.add(notebook.id)
       }
     })

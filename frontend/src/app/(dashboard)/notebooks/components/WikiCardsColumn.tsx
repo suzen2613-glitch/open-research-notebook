@@ -65,7 +65,7 @@ export function WikiCardsColumn({
   const queryClient = useQueryClient()
   const { wikiCollapsed, toggleWiki } = useNotebookColumnsStore()
   const { resolveModelId, getErrorMessage, validateModel } = useModelResolver()
-  const { parseValidDate, formatRelativeDate } = useFormattedDates()
+  const { formatRelativeDate } = useFormattedDates()
 
   const wikiLabel = t.wikiCards.wikiCard
   const openExportLabel = t.wikiCards.openExport

@@ -3,7 +3,7 @@
 import { Database, History, Loader2, RotateCcw, Square } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
-import type { ZoteroImportJobStatusResponse, ZoteroImportResponse } from '@/lib/api/zotero'
+import type { ZoteroImportResponse } from '@/lib/api/zotero'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'

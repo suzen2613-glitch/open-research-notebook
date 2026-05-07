@@ -19,7 +19,7 @@ export function ReferencesCard({
   referenceConnections,
   onOpenSource,
 }: ReferencesCardProps) {
-  const { t, language } = useTranslation()
+  const { language } = useTranslation()
   const isZh = language?.startsWith('zh')
 
   const referencesCardTitle = isZh ? '文献关联' : 'References'
