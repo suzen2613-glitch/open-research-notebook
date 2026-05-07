@@ -36,7 +36,12 @@ export function SourceEvidenceDialog({
 
   const handleViewSource = () => {
     if (data?.source_id) {
-      openModal('source', data.source_id)
+      const hasAnchor = typeof data.char_start === 'number' && typeof data.char_end === 'number'
+      openModal(
+        'source',
+        data.source_id,
+        hasAnchor ? { anchor: { start: data.char_start as number, end: data.char_end as number } } : undefined
+      )
     }
   }
 

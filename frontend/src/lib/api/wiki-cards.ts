@@ -12,6 +12,7 @@ export interface RelatedSourceResponse {
 
 export interface RelationEdgeResponse {
   source_id: string
+  target_source_id: string
   relation_type: string
   reason: string
 }

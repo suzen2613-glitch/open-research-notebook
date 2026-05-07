@@ -19,7 +19,7 @@ import { SourceDialog } from '@/components/source/SourceDialog'
  * - evidence: Source evidence excerpt modal
  */
 export function ModalProvider() {
-  const { modalType, modalId, closeModal } = useModalManager()
+  const { modalType, modalId, modalAnchor, closeModal } = useModalManager()
 
   return (
     <>
@@ -30,6 +30,7 @@ export function ModalProvider() {
           if (!open) closeModal()
         }}
         sourceId={modalId}
+        anchor={modalType === 'source' ? modalAnchor : null}
       />
 
       {/* Note Modal */}

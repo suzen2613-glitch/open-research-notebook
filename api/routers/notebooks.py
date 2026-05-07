@@ -64,13 +64,14 @@ async def get_notebooks(
                 ),
             )
 
-        # Build the query with counts
+        # Build the query with counts (normalized_order_by is whitelisted above)
+        order_field, order_dir = normalized_order_by.split()
         query = f"""
             SELECT *,
             count(<-reference.in) as source_count,
             count(<-artifact.in) as note_count
             FROM notebook
-            ORDER BY {normalized_order_by}
+            ORDER BY {order_field} {order_dir}
         """
 
         result = await repo_query(query)
@@ -82,9 +83,7 @@ async def get_notebooks(
         return [_build_notebook_response(nb) for nb in result]
     except Exception as e:
         logger.error(f"Error fetching notebooks: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error fetching notebooks: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to fetch notebooks")
 
 
 @router.post("/notebooks", response_model=NotebookResponse)
@@ -117,9 +116,7 @@ async def create_notebook(notebook: NotebookCreate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error creating notebook: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error creating notebook: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to create notebook")
 
 
 @router.get(
@@ -145,10 +142,7 @@ async def get_notebook_delete_preview(notebook_id: str):
         raise
     except Exception as e:
         logger.error(f"Error getting delete preview for notebook {notebook_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching notebook deletion preview: {str(e)}",
-        )
+        raise HTTPException(status_code=500, detail="Failed to fetch notebook deletion preview")
 
 
 @router.get("/notebooks/{notebook_id}", response_model=NotebookResponse)
@@ -173,9 +167,7 @@ async def get_notebook(notebook_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching notebook {notebook_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error fetching notebook: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to fetch notebook")
 
 
 @router.put("/notebooks/{notebook_id}", response_model=NotebookResponse)
@@ -234,9 +226,7 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating notebook {notebook_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error updating notebook: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to update notebook")
 
 
 @router.post("/notebooks/{notebook_id}/sources/{source_id}")
@@ -279,9 +269,7 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
         logger.error(
             f"Error linking source {source_id} to notebook {notebook_id}: {str(e)}"
         )
-        raise HTTPException(
-            status_code=500, detail=f"Error linking source to notebook: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to link source to notebook")
 
 
 @router.delete("/notebooks/{notebook_id}/sources/{source_id}")
@@ -309,9 +297,7 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
         logger.error(
             f"Error removing source {source_id} from notebook {notebook_id}: {str(e)}"
         )
-        raise HTTPException(
-            status_code=500, detail=f"Error removing source from notebook: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to remove source from notebook")
 
 
 @router.get(
@@ -345,9 +331,7 @@ async def get_notebook_duplicate_sources(notebook_id: str):
         logger.error(
             f"Error scanning duplicate sources for notebook {notebook_id}: {str(e)}"
         )
-        raise HTTPException(
-            status_code=500, detail=f"Error scanning duplicate sources: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to scan duplicate sources")
 
 
 @router.post(
@@ -387,9 +371,7 @@ async def cleanup_duplicate_sources(notebook_id: str):
         logger.error(
             f"Error cleaning duplicate sources for notebook {notebook_id}: {str(e)}"
         )
-        raise HTTPException(
-            status_code=500, detail=f"Error cleaning duplicate sources: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to clean duplicate sources")
 
 
 @router.delete("/notebooks/{notebook_id}", response_model=NotebookDeleteResponse)
@@ -424,6 +406,4 @@ async def delete_notebook(
         raise
     except Exception as e:
         logger.error(f"Error deleting notebook {notebook_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting notebook: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Failed to delete notebook")

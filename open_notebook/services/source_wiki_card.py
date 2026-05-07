@@ -622,6 +622,129 @@ CANONICAL_CONCEPT_ALIASES: Dict[str, tuple[str, str]] = {
         "Fourier Neural Operators",
         "FNO",
     ),
+    **_register_concept_aliases(
+        "concept:automatic-differentiation",
+        "Automatic Differentiation",
+        "Automatic Differentiation",
+        "Auto Differentiation",
+        "Auto-Differentiation",
+        "AD",
+        "自动微分",
+        "自动求导",
+    ),
+    **_register_concept_aliases(
+        "concept:pde",
+        "Partial Differential Equations",
+        "Partial Differential Equations",
+        "Partial differential equations",
+        "PDE",
+        "PDEs",
+        "偏微分方程",
+        "偏微分方程求解",
+        "求解偏微分方程",
+    ),
+    **_register_concept_aliases(
+        "concept:fourier-features",
+        "Fourier Features",
+        "Fourier Feature",
+        "Fourier Features",
+        "Random Fourier Features",
+        "Fourier Feature Mapping",
+        "傅里叶特征",
+    ),
+    **_register_concept_aliases(
+        "concept:domain-decomposition",
+        "Domain Decomposition",
+        "Domain Decomposition",
+        "Domain decomposition",
+        "XPINN",
+        "XPINNs",
+        "cPINN",
+        "区域分解",
+    ),
+    **_register_concept_aliases(
+        "concept:spectral-bias",
+        "Spectral Bias",
+        "Spectral Bias",
+        "Frequency Bias",
+        "F-Principle",
+        "Frequency Principle",
+        "频率偏差",
+        "频率原则",
+    ),
+    **_register_concept_aliases(
+        "concept:neural-tangent-kernel",
+        "Neural Tangent Kernel",
+        "Neural Tangent Kernel",
+        "NTK",
+        "神经正切核",
+    ),
+    **_register_concept_aliases(
+        "concept:scientific-machine-learning",
+        "Scientific Machine Learning",
+        "Scientific Machine Learning",
+        "Scientific ML",
+        "SciML",
+        "科学机器学习",
+    ),
+    **_register_concept_aliases(
+        "concept:inverse-problem",
+        "Inverse Problems",
+        "Inverse Problem",
+        "Inverse Problems",
+        "反问题",
+        "逆问题",
+    ),
+    **_register_concept_aliases(
+        "concept:full-waveform-inversion",
+        "Full Waveform Inversion",
+        "Full Waveform Inversion",
+        "FWI",
+        "全波形反演",
+    ),
+    **_register_concept_aliases(
+        "concept:maxwell-equations",
+        "Maxwell's Equations",
+        "Maxwell Equations",
+        "Maxwell's Equations",
+        "Maxwell 方程",
+        "Maxwell 方程组",
+        "麦克斯韦方程",
+        "麦克斯韦方程组",
+    ),
+    **_register_concept_aliases(
+        "concept:multi-scale-network",
+        "Multi-Scale Neural Networks",
+        "Multi-Scale Neural Networks",
+        "Multi-scale DNN",
+        "MscaleDNN",
+        "MscaleDNNs",
+        "多尺度神经网络",
+    ),
+    **_register_concept_aliases(
+        "concept:siren",
+        "SIREN",
+        "SIREN",
+        "Sinusoidal Representation Network",
+        "Sinusoidal Representation Networks",
+    ),
+    **_register_concept_aliases(
+        "concept:transformer",
+        "Transformer",
+        "Transformer",
+        "Transformers",
+        "Transformer Architecture",
+        "Transformer-based model",
+        "Transformer 架构",
+    ),
+    **_register_concept_aliases(
+        "concept:scaling-laws",
+        "Scaling Laws",
+        "Scaling Law",
+        "Scaling Laws",
+        "缩放律",
+        "缩放定律",
+    ),
 }
 CANONICAL_QUESTION_ALIASES: Dict[str, tuple[str, str]] = {}
 
@@ -1354,6 +1477,15 @@ def _canonicalize_registry_pairs(
     registry_lookup: Dict[str, tuple[str, str]],
     default_builder: Any,
 ) -> tuple[List[str], List[str]]:
+    # Hardcoded aliases are authoritative and always win over DB registry,
+    # so renamed/merged concepts (e.g. PDE EN/CN variants) converge on a
+    # single canonical id even if the DB still has legacy records.
+    hardcoded_alias_lookup: Dict[str, tuple[str, str]] = {}
+    if default_builder is _default_concept_pair:
+        hardcoded_alias_lookup = CANONICAL_CONCEPT_ALIASES
+    elif default_builder is _default_question_pair:
+        hardcoded_alias_lookup = CANONICAL_QUESTION_ALIASES
+
     current_lookup: Dict[str, tuple[str, str]] = {}
     current_id_lookup: Dict[str, str] = {}
     for current_id, current_name in zip(current_ids, current_names):
@@ -1375,7 +1507,11 @@ def _canonicalize_registry_pairs(
             continue
 
         lookup_key = _normalize_lookup_key(normalized)
-        pair = registry_lookup.get(lookup_key) or current_lookup.get(lookup_key)
+        pair = (
+            hardcoded_alias_lookup.get(lookup_key)
+            or registry_lookup.get(lookup_key)
+            or current_lookup.get(lookup_key)
+        )
         if not pair:
             pair = default_builder(normalized)
         if not pair:
@@ -1399,6 +1535,11 @@ def _canonicalize_registry_pairs(
         fallback_name = current_id_lookup.get(current_id) or current_name
         if not fallback_name:
             continue
+        # Drop legacy concept ids that now have a hardcoded canonical home.
+        if hardcoded_alias_lookup and current_id not in {
+            cid for cid, _ in hardcoded_alias_lookup.values()
+        }:
+            pass
         seen_ids.add(current_id)
         normalized_pairs.append((current_id, fallback_name))
 
@@ -1531,18 +1672,36 @@ def _validate_wiki_card_payload_schema(payload: Dict[str, Any]) -> None:
             )
 
 
+def _escape_invalid_json_backslashes(text: str) -> str:
+    return re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
+
+
+def _try_parse_json_dict(raw_text: str) -> Optional[Dict[str, Any]]:
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        repaired = _escape_invalid_json_backslashes(raw_text)
+        if repaired == raw_text:
+            return None
+        try:
+            parsed = json.loads(repaired)
+        except json.JSONDecodeError:
+            return None
+
+    if isinstance(parsed, dict):
+        return parsed
+    return None
+
+
 def _extract_json_dict(raw_text: str) -> Dict[str, Any]:
     cleaned = clean_thinking_content(raw_text).strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\s*```$", "", cleaned)
 
-    try:
-        parsed = json.loads(cleaned)
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        pass
+    parsed = _try_parse_json_dict(cleaned)
+    if parsed is not None:
+        return parsed
 
     start = cleaned.find("{")
     end = cleaned.rfind("}")
@@ -1550,9 +1709,9 @@ def _extract_json_dict(raw_text: str) -> Dict[str, Any]:
         raise ValueError("Wiki card model output did not contain a JSON object")
 
     candidate = cleaned[start : end + 1]
-    parsed = json.loads(candidate)
-    if not isinstance(parsed, dict):
-        raise ValueError("Wiki card model output JSON must be an object")
+    parsed = _try_parse_json_dict(candidate)
+    if parsed is None:
+        raise ValueError("Wiki card model output JSON could not be parsed")
     return parsed
 
 
@@ -1987,6 +2146,8 @@ async def _build_evidence_snippets(
                 "char_start": embedding.char_start,
                 "char_end": embedding.char_end,
                 "excerpt": _shorten_excerpt(embedding.content),
+                "score": float(score),
+                "match_count": len(matches),
                 "reason": _format_evidence_reason(
                     matches,
                     "Selected as a representative excerpt from the source evidence trail."
@@ -1999,10 +2160,26 @@ async def _build_evidence_snippets(
     return snippets
 
 
+# Evidence keyword-match scores above this are treated as strong evidence.
+# _score_embedding_against_queries can reach 20-30+; 12 is a "convincing" floor.
+CONFIDENCE_EVIDENCE_SATURATION_SCORE = 40.0
+
+
 def _compute_extraction_confidence(
     card: Dict[str, Any],
     evidence_snippets: List[Dict[str, Any]],
 ) -> float:
+    """Weighted confidence in [0, 1]. Higher = more trustworthy extraction.
+
+    Signals (weights sum to 1.0):
+      - coverage_ratio       (0.35): how many core fields are populated
+      - evidence_strength    (0.30): avg keyword-match score of the top snippets,
+                                     normalized. 0 when snippets have no stored
+                                     score (legacy) or no snippets at all.
+      - evidence_coverage    (0.15): penalizes cards with <4 evidence snippets
+      - summary_grounded     (0.10): card was built on top of a canonical summary
+      - has_local_relations  (0.10): links at least one related_source
+    """
     coverage_score = 0.0
     for field_name in WIKI_CARD_COVERAGE_FIELDS:
         value = card.get(field_name)
@@ -2010,15 +2187,27 @@ def _compute_extraction_confidence(
             coverage_score += 1.0 if value else 0.0
         elif _normalize_optional_string(value):
             coverage_score += 1.0
-
     coverage_ratio = coverage_score / len(WIKI_CARD_COVERAGE_FIELDS)
-    evidence_ratio = min(1.0, len(evidence_snippets) / 4)
-    summary_bonus = 0.08 if card.get("summary_source_insight_id") else 0.0
-    relation_bonus = 0.04 if card.get("related_sources") else 0.0
 
-    confidence = 0.28 + (coverage_ratio * 0.45) + (evidence_ratio * 0.15)
-    confidence += summary_bonus + relation_bonus
-    return round(min(0.98, max(0.2, confidence)), 2)
+    scored_snippets = [s for s in evidence_snippets if isinstance(s, dict) and s.get("score") is not None]
+    if scored_snippets:
+        avg_score = sum(float(s["score"]) for s in scored_snippets) / len(scored_snippets)
+        evidence_strength = min(1.0, max(0.0, avg_score / CONFIDENCE_EVIDENCE_SATURATION_SCORE))
+    else:
+        evidence_strength = 0.0
+
+    evidence_coverage = min(1.0, len(evidence_snippets) / 4.0)
+    summary_grounded = 1.0 if card.get("summary_source_insight_id") else 0.0
+    has_local_relations = 1.0 if card.get("related_sources") else 0.0
+
+    confidence = (
+        coverage_ratio * 0.35
+        + evidence_strength * 0.30
+        + evidence_coverage * 0.15
+        + summary_grounded * 0.10
+        + has_local_relations * 0.10
+    )
+    return round(min(0.99, max(0.0, confidence)), 2)
 
 
 async def enrich_wiki_card_quality_fields(
@@ -2030,17 +2219,23 @@ async def enrich_wiki_card_quality_fields(
     enriched.update(_apply_wiki_card_language_strategy(enriched))
 
     evidence_snippets = list(enriched.get("evidence_snippets", []) or [])
-    if source and not evidence_snippets:
-        evidence_snippets = await _build_evidence_snippets(source, enriched)
+    # Rebuild snippets if they're missing entirely OR if they're from the
+    # legacy format that didn't persist the keyword-match score (needed for
+    # the new confidence formula). Backfill picks up fresh scores this way.
+    needs_rebuild = not evidence_snippets or any(
+        isinstance(s, dict) and s.get("score") is None for s in evidence_snippets
+    )
+    if source and needs_rebuild:
+        rebuilt = await _build_evidence_snippets(source, enriched)
+        if rebuilt:
+            evidence_snippets = rebuilt
     enriched["evidence_snippets"] = evidence_snippets
 
-    extraction_confidence = enriched.get("extraction_confidence")
-    if extraction_confidence is None:
-        extraction_confidence = _compute_extraction_confidence(
-            enriched,
-            evidence_snippets,
-        )
-    enriched["extraction_confidence"] = extraction_confidence
+    # Always recompute confidence so formula changes take effect on backfill.
+    enriched["extraction_confidence"] = _compute_extraction_confidence(
+        enriched,
+        evidence_snippets,
+    )
     return enriched
 
 
@@ -2576,7 +2771,16 @@ async def serialize_source_wiki_card(
         "question_ids": question_ids,
         "question_names": question_names,
         "related_sources": wiki_card.related_sources,
-        "relation_edges": wiki_card.relation_edges,
+        "relation_edges": [
+            {
+                "source_id": str(wiki_card.source),
+                "target_source_id": str((relation or {}).get("target_source_id") or (relation or {}).get("source_id") or ""),
+                "relation_type": str((relation or {}).get("relation_type") or "related_work"),
+                "reason": str((relation or {}).get("reason") or "No reason provided."),
+            }
+            for relation in (wiki_card.relation_edges or [])
+            if isinstance(relation, dict) and str((relation or {}).get("source_id") or (relation or {}).get("target_source_id") or "").strip()
+        ],
         "display_language": wiki_card.display_language,
         "canonical_language": wiki_card.canonical_language,
         "extraction_confidence": wiki_card.extraction_confidence,
@@ -2592,7 +2796,15 @@ async def serialize_source_wiki_card(
         "updated": str(wiki_card.updated or ""),
     }
     source = None
-    if not wiki_card.evidence_snippets or wiki_card.extraction_confidence is None:
+    snippets_need_rebuild = any(
+        isinstance(s, dict) and s.get("score") is None
+        for s in (wiki_card.evidence_snippets or [])
+    )
+    if (
+        not wiki_card.evidence_snippets
+        or wiki_card.extraction_confidence is None
+        or snippets_need_rebuild
+    ):
         try:
             source = await wiki_card.get_source()
         except Exception as exc:

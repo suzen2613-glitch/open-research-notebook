@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { isAxiosError } from 'axios'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -39,18 +39,22 @@ import {
   MessageSquare,
   FileText,
   BookOpenText,
+  Highlighter,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { NotebookAssociations } from '@/components/source/NotebookAssociations'
+import { ReferencesCard } from '@/components/source/detail/ReferencesCard'
+import type { ModalAnchor } from '@/lib/hooks/use-modal-manager'
 
 interface SourceDetailContentProps {
   sourceId: string
   showChatButton?: boolean
   onChatClick?: () => void
   onClose?: () => void
+  anchor?: ModalAnchor | null
 }
 
 type SourceViewMode = 'markdown' | 'reading'
@@ -66,7 +70,8 @@ export function SourceDetailContent({
   sourceId,
   showChatButton = false,
   onChatClick,
-  onClose
+  onClose,
+  anchor = null,
 }: SourceDetailContentProps) {
   const { t, language } = useTranslation()
   const isZh = language?.startsWith('zh')
@@ -272,18 +277,6 @@ export function SourceDetailContent({
     return 'text'
   }
 
-  const referencesCardTitle = isZh ? '文献关联' : 'References'
-  const referencesCardDescription = isZh
-    ? '从当前论文的参考文献中提取出的 notebook 内互联和候选论文。'
-    : 'Notebook-internal links and candidate papers extracted from this source references.'
-  const citesLabel = isZh ? '引用了 notebook 中的论文' : 'Cites in notebook'
-  const citedByLabel = isZh ? '被 notebook 中的论文引用' : 'Cited by in notebook'
-  const candidatesLabel = isZh ? '候选参考文献' : 'Reference candidates'
-  const noConnectionsLabel = isZh ? '还没有匹配到 notebook 内部文献。' : 'No notebook connections matched yet.'
-  const noCandidatesLabel = isZh ? '暂时没有可补充的候选参考文献。' : 'No unmatched reference candidates yet.'
-  const noReferenceSectionLabel = isZh ? '尚未识别到参考文献区。' : 'No reference section detected yet.'
-  const openPaperLabel = isZh ? '打开论文' : 'Open paper'
-
   const handleCopyUrl = useCallback(() => {
     if (source?.asset?.url) {
       navigator.clipboard.writeText(source.asset.url)
@@ -330,6 +323,38 @@ export function SourceDetailContent({
     () => normalizeMathDelimiters(source?.full_text || t.sources.noContent),
     [source?.full_text, t.sources.noContent]
   )
+
+  const anchorBannerRef = useRef<HTMLDivElement | null>(null)
+  const anchorExcerpt = useMemo(() => {
+    if (!anchor || !source?.full_text) return null
+    const text = source.full_text
+    const start = Math.max(0, Math.min(anchor.start, text.length))
+    const end = Math.max(start, Math.min(anchor.end, text.length))
+    if (end <= start) return null
+    const contextBefore = 180
+    const contextAfter = 220
+    const ctxStart = Math.max(0, start - contextBefore)
+    const ctxEnd = Math.min(text.length, end + contextAfter)
+    return {
+      before: text.slice(ctxStart, start),
+      match: text.slice(start, end),
+      after: text.slice(end, ctxEnd),
+      start,
+      end,
+      truncatedLeft: ctxStart > 0,
+      truncatedRight: ctxEnd < text.length,
+    }
+  }, [anchor, source?.full_text])
+
+  useEffect(() => {
+    if (anchorExcerpt && anchorBannerRef.current) {
+      // Defer until layout settles (source content renders after fetch).
+      const timer = setTimeout(() => {
+        anchorBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 200)
+      return () => clearTimeout(timer)
+    }
+  }, [anchorExcerpt])
 
   const handleDelete = async () => {
     if (!source) return
@@ -536,6 +561,32 @@ export function SourceDetailContent({
                 )}
 
                 <div className={contentWrapperClassName}>
+                  {anchorExcerpt && (
+                    <div
+                      ref={anchorBannerRef}
+                      className="not-prose mb-6 rounded-lg border border-amber-300 bg-amber-50/80 p-4 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/30"
+                    >
+                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+                        <Highlighter className="h-3.5 w-3.5" />
+                        Evidence excerpt
+                        <Badge variant="outline" className="border-amber-300 bg-white/60 text-[10px] font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+                          chars {anchorExcerpt.start}–{anchorExcerpt.end}
+                        </Badge>
+                      </div>
+                      <div className="whitespace-pre-wrap break-words rounded bg-white/70 p-3 text-[13px] leading-6 text-foreground/90 dark:bg-amber-950/40">
+                        {anchorExcerpt.truncatedLeft && <span className="text-amber-600">… </span>}
+                        <span className="text-muted-foreground">{anchorExcerpt.before}</span>
+                        <mark className="rounded bg-amber-200 px-0.5 text-amber-950 dark:bg-amber-500/60 dark:text-amber-50">
+                          {anchorExcerpt.match}
+                        </mark>
+                        <span className="text-muted-foreground">{anchorExcerpt.after}</span>
+                        {anchorExcerpt.truncatedRight && <span className="text-amber-600"> …</span>}
+                      </div>
+                      <p className="mt-2 text-[11px] text-amber-800/80 dark:text-amber-300/80">
+                        Jumped from a wiki card evidence snippet. Full source continues below.
+                      </p>
+                    </div>
+                  )}
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath]}
                     rehypePlugins={[rehypeKatex]}
@@ -656,117 +707,12 @@ export function SourceDetailContent({
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>{referencesCardTitle}</CardTitle>
-                  <CardDescription>
-                    {referencesLoading
-                      ? (isZh ? '正在提取参考文献关联…' : 'Extracting reference connections...')
-                      : referenceConnections
-                        ? `${referenceConnections.references_extracted} ${isZh ? '条参考文献已扫描' : 'references scanned'}`
-                        : referencesCardDescription}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  {referencesLoading ? (
-                    <div className="space-y-3">
-                      {[0, 1, 2].map((item) => (
-                        <div key={item} className="space-y-2">
-                          <div className="h-3 w-32 animate-pulse rounded bg-muted" />
-                          <div className="h-10 animate-pulse rounded-md bg-muted/70" />
-                        </div>
-                      ))}
-                    </div>
-                  ) : referencesError ? (
-                    <p className="text-sm text-muted-foreground">{referencesError}</p>
-                  ) : referenceConnections ? (
-                    <div className="space-y-5">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-sm font-semibold">{citesLabel}</h3>
-                          <Badge variant="secondary">{referenceConnections.citations_in_notebook.length}</Badge>
-                        </div>
-                        {referenceConnections.citations_in_notebook.length > 0 ? (
-                          <div className="space-y-2">
-                            {referenceConnections.citations_in_notebook.map((item) => (
-                              <button
-                                key={item.source_id}
-                                type="button"
-                                onClick={() => openRelatedSource(item.source_id)}
-                                className="w-full rounded-lg border px-3 py-2 text-left transition hover:bg-muted/50"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-medium leading-5">{item.source_title || item.source_id}</p>
-                                    {item.raw_reference ? (
-                                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.raw_reference}</p>
-                                    ) : null}
-                                  </div>
-                                  <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">{referenceConnections.references_extracted === 0 ? noReferenceSectionLabel : noConnectionsLabel}</p>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-sm font-semibold">{citedByLabel}</h3>
-                          <Badge variant="secondary">{referenceConnections.cited_by_in_notebook.length}</Badge>
-                        </div>
-                        {referenceConnections.cited_by_in_notebook.length > 0 ? (
-                          <div className="space-y-2">
-                            {referenceConnections.cited_by_in_notebook.map((item) => (
-                              <button
-                                key={item.source_id}
-                                type="button"
-                                onClick={() => openRelatedSource(item.source_id)}
-                                className="w-full rounded-lg border px-3 py-2 text-left transition hover:bg-muted/50"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-medium leading-5">{item.source_title || item.source_id}</p>
-                                    {item.raw_reference ? (
-                                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.raw_reference}</p>
-                                    ) : null}
-                                  </div>
-                                  <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">{noConnectionsLabel}</p>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-sm font-semibold">{candidatesLabel}</h3>
-                          <Badge variant="secondary">{referenceConnections.reference_candidates.length}</Badge>
-                        </div>
-                        {referenceConnections.reference_candidates.length > 0 ? (
-                          <div className="space-y-2">
-                            {referenceConnections.reference_candidates.map((item, index) => (
-                              <div key={`${item.normalized_title || item.title || 'candidate'}-${index}`} className="rounded-lg border px-3 py-2">
-                                <p className="text-sm font-medium leading-5">{item.title || item.normalized_title || openPaperLabel}</p>
-                                <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{item.raw_reference}</p>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">{referenceConnections.references_extracted === 0 ? noReferenceSectionLabel : noCandidatesLabel}</p>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">{referencesCardDescription}</p>
-                  )}
-                </CardContent>
-              </Card>
+              <ReferencesCard
+                referencesLoading={referencesLoading}
+                referencesError={referencesError}
+                referenceConnections={referenceConnections}
+                onOpenSource={openRelatedSource}
+              />
 
               <NotebookAssociations
                 sourceId={sourceId}

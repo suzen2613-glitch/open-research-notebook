@@ -3,6 +3,7 @@ import asyncio
 from open_notebook.domain.notebook import Source, SourceEmbedding, SourceWikiCard
 from open_notebook.services.source_wiki_card import (
     _choose_canonical_name,
+    _extract_json_dict,
     _extract_intro_context_fallback,
     _extract_intro_context_object,
     _fill_missing_intro_context_fields,
@@ -415,6 +416,15 @@ def test_extract_intro_context_object_accepts_intro_only_json():
         "claimed_gap": "Gap",
         "positioning_summary": "Positioning",
     }
+
+
+def test_extract_json_dict_repairs_invalid_backslash_escapes_from_model_output():
+    parsed = _extract_json_dict(
+        r'{"summary_text": "Uses \_private tokens and 50\% sparsity", "topics": ["PINN"]}'
+    )
+
+    assert parsed["summary_text"] == r'Uses \_private tokens and 50\% sparsity'
+    assert parsed["topics"] == ["PINN"]
 
 
 def test_extract_context_sections_prefers_introduction_and_related_work_headings():

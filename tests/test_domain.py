@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from open_notebook.ai.models import ModelManager
 from open_notebook.domain.base import RecordModel
 from open_notebook.domain.content_settings import ContentSettings
+from open_notebook.domain.credential import Credential
 from open_notebook.domain.notebook import Asset, Note, Notebook, Source, SourceWikiCard
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import InvalidInputError
@@ -49,6 +50,21 @@ class TestRecordModelSingleton:
 
         # Cleanup
         TestRecord.clear_instance()
+
+
+class TestObjectModelOrdering:
+    """Test suite for safe ObjectModel ORDER BY normalization."""
+
+    def test_normalize_order_by_supports_existing_call_shapes(self):
+        assert Credential._normalize_order_by("provider, created") == (
+            "provider asc, created asc"
+        )
+        assert Transformation._normalize_order_by("name") == "name asc"
+        assert SourceWikiCard._normalize_order_by("updated DESC") == "updated desc"
+
+    def test_normalize_order_by_rejects_unknown_fields(self):
+        with pytest.raises(InvalidInputError):
+            Credential._normalize_order_by("provider; DELETE credential")
 
 
 # ============================================================================

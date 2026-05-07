@@ -36,6 +36,29 @@ class ObjectModel(BaseModel):
     created: Optional[datetime] = None
     updated: Optional[datetime] = None
 
+    @classmethod
+    def _normalize_order_by(cls, order_by: str) -> str:
+        allowed_fields = set(cls.model_fields.keys()) | {"id", "created", "updated"}
+        clauses: List[str] = []
+        for raw_clause in order_by.split(","):
+            parts = raw_clause.strip().split()
+            if not parts:
+                continue
+            if len(parts) > 2:
+                raise InvalidInputError(f"Invalid order_by: {order_by}")
+
+            field_name = parts[0].lower()
+            direction = parts[1].lower() if len(parts) == 2 else "asc"
+            if field_name not in allowed_fields or direction not in {"asc", "desc"}:
+                raise InvalidInputError(f"Invalid order_by: {order_by}")
+
+            clauses.append(f"{field_name} {direction}")
+
+        if not clauses:
+            raise InvalidInputError(f"Invalid order_by: {order_by}")
+
+        return ", ".join(clauses)
+
     @field_validator("id", mode="before")
     @classmethod
     def parse_id(cls, value):
@@ -56,7 +79,7 @@ class ObjectModel(BaseModel):
                     "get_all() must be called from a specific model class"
                 )
             if order_by:
-                query = f"SELECT * FROM {table_name} ORDER BY {order_by}"
+                query = f"SELECT * FROM {table_name} ORDER BY {cls._normalize_order_by(order_by)}"
             else:
                 query = f"SELECT * FROM {table_name}"
 

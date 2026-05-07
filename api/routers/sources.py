@@ -33,10 +33,14 @@ from api.models import (
 from commands.source_commands import SourceProcessingInput
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
-from open_notebook.domain.notebook import Notebook, Source, SourceInsight
+from open_notebook.domain.notebook import Asset, Notebook, Source, SourceInsight
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import InvalidInputError
-from open_notebook.services.source_ingest import SourceIngestError, ingest_source_content
+from open_notebook.services.source_dedupe import get_effective_source_title
+from open_notebook.services.source_ingest import (
+    SourceIngestError,
+    ingest_source_content,
+)
 from open_notebook.services.source_references import build_source_reference_connections
 
 router = APIRouter()
@@ -96,6 +100,45 @@ def validate_server_upload_path(file_path: str) -> str:
         raise HTTPException(status_code=400, detail="file_path does not exist on server")
 
     return str(resolved_path)
+
+
+_LEGACY_IMAGE_PREFIXES = (
+    'http://localhost:8888',
+    'https://localhost:8888',
+    'http://127.0.0.1:8888',
+    'https://127.0.0.1:8888',
+    'http://0.0.0.0:8888',
+    'https://0.0.0.0:8888',
+)
+
+
+def _get_effective_source_title_for_response(source_like: Any) -> Optional[str]:
+    effective = get_effective_source_title(source_like if isinstance(source_like, dict) else {
+        'title': getattr(source_like, 'title', None),
+        'full_text': getattr(source_like, 'full_text', None),
+        'asset': {
+            'file_path': getattr(getattr(source_like, 'asset', None), 'file_path', None),
+            'url': getattr(getattr(source_like, 'asset', None), 'url', None),
+        } if getattr(source_like, 'asset', None) else None,
+    })
+    if effective:
+        return effective
+    if isinstance(source_like, dict):
+        raw_title = source_like.get('title')
+    else:
+        raw_title = getattr(source_like, 'title', None)
+    return str(raw_title).strip() if raw_title else None
+
+
+def _normalize_source_full_text_for_response(full_text: Optional[str]) -> Optional[str]:
+    if not full_text:
+        return full_text
+
+    normalized = full_text
+    for prefix in _LEGACY_IMAGE_PREFIXES:
+        normalized = normalized.replace(prefix, '/api/images')
+    normalized = normalized.replace('](/images/', '](/api/images/')
+    return normalized
 
 
 async def save_uploaded_file(upload_file: UploadFile) -> str:
@@ -210,8 +253,8 @@ async def get_sources(
                 status_code=400, detail="sort_order must be 'asc' or 'desc'"
             )
 
-        # Build ORDER BY clause
-        order_clause = f"ORDER BY {sort_by} {sort_order.upper()}"
+        # Build ORDER BY clause (sort_by and sort_order already validated above)
+        order_clause = f"ORDER BY {sort_by} {sort_order.lower()}"
 
         # Build the query
         if notebook_id:
@@ -288,7 +331,7 @@ async def get_sources(
             response_list.append(
                 SourceListResponse(
                     id=row["id"],
-                    title=row.get("title"),
+                    title=_get_effective_source_title_for_response(row),
                     topics=row.get("topics") or [],
                     asset=AssetModel(
                         file_path=row["asset"].get("file_path")
@@ -316,7 +359,7 @@ async def get_sources(
         raise
     except Exception as e:
         logger.error(f"Error fetching sources: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching sources: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch sources")
 
 
 @router.post("/sources", response_model=SourceResponse)
@@ -388,7 +431,7 @@ async def create_source(
         if source_data.async_processing:
             return SourceResponse(
                 id=result_source.id or "",
-                title=result_source.title,
+                title=_get_effective_source_title_for_response(result_source),
                 topics=result_source.topics or [],
                 asset=None,
                 full_text=None,
@@ -405,7 +448,7 @@ async def create_source(
         embedded_chunks = await result_source.get_embedded_chunks()
         return SourceResponse(
             id=result_source.id or "",
-            title=result_source.title,
+            title=_get_effective_source_title_for_response(result_source),
             topics=result_source.topics or [],
             asset=AssetModel(
                 file_path=result_source.asset.file_path
@@ -415,7 +458,7 @@ async def create_source(
             )
             if result_source.asset
             else None,
-            full_text=result_source.full_text,
+            full_text=_normalize_source_full_text_for_response(result_source.full_text),
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
             created=str(result_source.created),
@@ -428,8 +471,8 @@ async def create_source(
     except SourceIngestError as e:
         logger.error(f"Source ingest failed but source was retained: {e}")
         if isinstance(e.__cause__, ValueError):
-            raise HTTPException(status_code=400, detail=str(e))
-        raise HTTPException(status_code=500, detail=f"Error creating source: {str(e)}")
+            raise HTTPException(status_code=400, detail=str(e.__cause__))
+        raise HTTPException(status_code=500, detail="Failed to create source")
     except HTTPException:
         # Clean up uploaded file on HTTP exceptions if we created it
         if file_path and upload_file:
@@ -456,7 +499,7 @@ async def create_source(
                 pass
         if isinstance(e, ValueError):
             raise HTTPException(status_code=400, detail=str(e))
-        raise HTTPException(status_code=500, detail=f"Error creating source: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create source")
 
 
 @router.post("/sources/json", response_model=SourceResponse)
@@ -547,7 +590,7 @@ async def get_source(source_id: str):
 
         return SourceResponse(
             id=source.id or "",
-            title=source.title,
+            title=_get_effective_source_title_for_response(source),
             topics=source.topics or [],
             asset=AssetModel(
                 file_path=source.asset.file_path if source.asset else None,
@@ -555,7 +598,7 @@ async def get_source(source_id: str):
             )
             if source.asset
             else None,
-            full_text=source.full_text,
+            full_text=_normalize_source_full_text_for_response(source.full_text),
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
             file_available=_is_source_file_available(source),
@@ -573,7 +616,7 @@ async def get_source(source_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching source {source_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching source: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch source")
 
 
 @router.head("/sources/{source_id}/download")
@@ -626,7 +669,7 @@ async def get_source_reference_connections(
         logger.error(f"Error fetching source references for {source_id}: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error fetching source references: {str(e)}",
+            detail="Failed to fetch source references",
         )
 
 
@@ -720,7 +763,7 @@ async def get_source_status(source_id: str):
     except Exception as e:
         logger.error(f"Error fetching status for source {source_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching source status: {str(e)}"
+            status_code=500, detail="Failed to fetch source status"
         )
 
 
@@ -749,7 +792,7 @@ async def update_source(source_id: str, source_update: SourceUpdate):
         embedded_chunks = await source.get_embedded_chunks()
         return SourceResponse(
             id=source.id or "",
-            title=source.title,
+            title=_get_effective_source_title_for_response(source),
             topics=source.topics or [],
             asset=AssetModel(
                 file_path=source.asset.file_path if source.asset else None,
@@ -757,7 +800,7 @@ async def update_source(source_id: str, source_update: SourceUpdate):
             )
             if source.asset
             else None,
-            full_text=source.full_text,
+            full_text=_normalize_source_full_text_for_response(source.full_text),
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
             created=str(source.created),
@@ -772,7 +815,7 @@ async def update_source(source_id: str, source_update: SourceUpdate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating source {source_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating source: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update source")
 
 
 @router.post("/sources/{source_id}/retry", response_model=SourceResponse)
@@ -867,7 +910,7 @@ async def retry_source_processing(source_id: str):
             # Return updated source response
             return SourceResponse(
                 id=source.id or "",
-                title=source.title,
+                title=_get_effective_source_title_for_response(source),
                 topics=source.topics or [],
                 asset=AssetModel(
                     file_path=source.asset.file_path if source.asset else None,
@@ -875,7 +918,7 @@ async def retry_source_processing(source_id: str):
                 )
                 if source.asset
                 else None,
-                full_text=source.full_text,
+                full_text=_normalize_source_full_text_for_response(source.full_text),
                 embedded=embedded_chunks > 0,
                 embedded_chunks=embedded_chunks,
                 created=str(source.created),
@@ -899,7 +942,7 @@ async def retry_source_processing(source_id: str):
     except Exception as e:
         logger.error(f"Error retrying source processing for {source_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error retrying source processing: {str(e)}"
+            status_code=500, detail="Failed to retry source processing"
         )
 
 
@@ -918,7 +961,7 @@ async def delete_source(source_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting source {source_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting source: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete source")
 
 
 @router.get("/sources/{source_id}/insights", response_model=List[SourceInsightResponse])
@@ -952,7 +995,7 @@ async def get_source_insights(source_id: str):
     except Exception as e:
         logger.error(f"Error fetching insights for source {source_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching insights: {str(e)}"
+            status_code=500, detail="Failed to fetch insights"
         )
 
 
@@ -1023,5 +1066,5 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
     except Exception as e:
         logger.error(f"Error starting insight generation for source {source_id}: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Error starting insight generation: {str(e)}"
+            status_code=500, detail="Failed to start insight generation"
         )

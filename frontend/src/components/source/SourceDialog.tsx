@@ -3,11 +3,13 @@
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { SourceDetailContent } from './SourceDetailContent'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import type { ModalAnchor } from '@/lib/hooks/use-modal-manager'
 
 interface SourceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   sourceId: string | null
+  anchor?: ModalAnchor | null
 }
 
 /**
@@ -16,7 +18,7 @@ interface SourceDialogProps {
  * Displays source details in a modal dialog.
  * Includes a "Chat with source" button that opens the full source page in a new tab.
  */
-export function SourceDialog({ open, onOpenChange, sourceId }: SourceDialogProps) {
+export function SourceDialog({ open, onOpenChange, sourceId, anchor }: SourceDialogProps) {
   const { t } = useTranslation()
   // Ensure source ID has 'source:' prefix for API calls and routing
   const sourceIdWithPrefix = sourceId
@@ -51,6 +53,7 @@ export function SourceDialog({ open, onOpenChange, sourceId }: SourceDialogProps
             showChatButton={true}
             onChatClick={handleChatClick}
             onClose={handleClose}
+            anchor={anchor ?? null}
           />
         </div>
       </DialogContent>

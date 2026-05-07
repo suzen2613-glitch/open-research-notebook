@@ -248,7 +248,7 @@ export function SourcesColumn({
                   ) : (
                     <Search className="h-4 w-4 mr-2 shrink-0" />
                   )}
-                  <span className="truncate">Scan Duplicates</span>
+                  <span className="truncate">{t.sources.scanDuplicates}</span>
                 </Button>
                 <Button
                   size="sm"
@@ -262,7 +262,7 @@ export function SourcesColumn({
                   ) : (
                     <Trash2 className="h-4 w-4 mr-2 shrink-0" />
                   )}
-                  <span className="truncate">Clean Duplicates</span>
+                  <span className="truncate">{t.sources.cleanDuplicates}</span>
                 </Button>
                 <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
                   <DropdownMenuTrigger asChild>
@@ -290,7 +290,7 @@ export function SourcesColumn({
           <CardContent ref={scrollContainerRef} className="flex-1 overflow-y-auto min-h-0">
             {duplicateGroups.length > 0 && (
               <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                Found {duplicateStats.duplicateCount} duplicate source{duplicateStats.duplicateCount === 1 ? '' : 's'} in {duplicateStats.groupCount} group{duplicateStats.groupCount === 1 ? '' : 's'}.
+                {t.sources.duplicateStats.replace('{count}', String(duplicateStats.duplicateCount)).replace('{groups}', String(duplicateStats.groupCount))}
               </div>
             )}
             {isLoading ? (
@@ -371,9 +371,9 @@ export function SourcesColumn({
       <ConfirmDialog
         open={cleanupDialogOpen}
         onOpenChange={setCleanupDialogOpen}
-        title="Clean duplicate sources?"
+        title={t.sources.cleanDuplicatesConfirm}
         description={duplicateSummary}
-        confirmText="Clean Duplicates"
+        confirmText={t.sources.cleanDuplicates}
         onConfirm={handleCleanupDuplicates}
         isLoading={cleanupDuplicates.isPending}
         confirmVariant="destructive"

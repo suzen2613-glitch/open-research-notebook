@@ -2,7 +2,7 @@
 FROM python:3.12-slim-bookworm AS builder
 
 # Install uv using the official method
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /uvx /bin/
 
 # Install system dependencies required for building certain Python packages
 # Add Node.js 20.x LTS for building frontend
@@ -52,7 +52,7 @@ FROM python:3.12-slim-bookworm AS runtime
 
 # Install only runtime system dependencies (no build tools)
 # Add Node.js 20.x LTS for running frontend
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     supervisor \
     curl \
@@ -61,7 +61,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv using the official method
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /uvx /bin/
 
 # Set the working directory in the container to /app
 WORKDIR /app
@@ -100,6 +100,12 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # Create log directories
 RUN mkdir -p /var/log/supervisor
 
+# Create non-root user for runtime
+RUN useradd -r -s /usr/sbin/nologin -d /app appuser \
+    && chown -R appuser:appuser /app /var/log/supervisor
+
+USER appuser
+
 # Runtime API URL Configuration
 # The API_URL environment variable can be set at container runtime to configure
 # where the frontend should connect to the API. This allows the same Docker image
@@ -109,5 +115,8 @@ RUN mkdir -p /var/log/supervisor
 # Set API_URL when using reverse proxies or custom domains.
 #
 # Example: docker run -e API_URL=https://your-domain.com/api ...
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:5055/health || exit 1
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

@@ -1,0 +1,2 @@
+REMOVE FIELD IF EXISTS evidence_snippets.*.score ON TABLE source_wiki_card;
+REMOVE FIELD IF EXISTS evidence_snippets.*.match_count ON TABLE source_wiki_card;

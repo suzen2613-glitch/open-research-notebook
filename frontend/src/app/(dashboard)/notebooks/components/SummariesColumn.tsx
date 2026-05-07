@@ -1,9 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { isAxiosError } from 'axios'
+import { useCallback, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { formatDistanceToNow } from 'date-fns'
 import { BookText, FileText, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -21,12 +19,10 @@ import { Progress } from '@/components/ui/progress'
 import { insightsApi } from '@/lib/api/insights'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { type NotebookSourceSummaryResponse, summariesApi } from '@/lib/api/summaries'
-import { modelsApi } from '@/lib/api/models'
-import { useModels, useModelDefaults, useProviders } from '@/lib/hooks/use-models'
+import { useModelResolver, useBatchProgressReset, useFormattedDates } from '@/lib/hooks/use-model-resolver'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
-import { getDateLocale } from '@/lib/utils/date-locale'
 
 interface SummariesColumnProps {
   summaries?: NotebookSourceSummaryResponse[]
@@ -57,11 +53,11 @@ export function SummariesColumn({
   notebookId,
 }: SummariesColumnProps) {
   const { t, language } = useTranslation()
-  const { data: models = [] } = useModels()
-  const { data: modelDefaults } = useModelDefaults()
-  const { data: providerAvailability } = useProviders()
   const queryClient = useQueryClient()
   const { openModal } = useModalManager()
+  const { resolveModelId, getErrorMessage, validateModel } = useModelResolver()
+  const { parseValidDate, formatRelativeDate } = useFormattedDates()
+
   const [selectedSummary, setSelectedSummary] = useState<SelectedSummaryState | null>(null)
   const [generatingSourceIds, setGeneratingSourceIds] = useState<Set<string>>(() => new Set())
   const [refreshingSummaryIds, setRefreshingSummaryIds] = useState<Set<string>>(() => new Set())
@@ -69,8 +65,6 @@ export function SummariesColumn({
   const [summaryErrorsBySourceId, setSummaryErrorsBySourceId] = useState<Record<string, string>>({})
   const [isBatchGenerating, setIsBatchGenerating] = useState(false)
   const [batchProgress, setBatchProgress] = useState<SummaryBatchProgressState | null>(null)
-  const validatedModelIdsRef = useRef<Set<string>>(new Set())
-  const batchProgressResetTimeoutRef = useRef<number | null>(null)
 
   const { summariesCollapsed, toggleSummaries } = useNotebookColumnsStore()
   const collapseButton = useMemo(
@@ -78,100 +72,13 @@ export function SummariesColumn({
     [t.podcasts.summary, toggleSummaries]
   )
 
-  const languageModels = useMemo(
-    () =>
-      [...models]
-        .filter((model) => model.type === 'language')
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [models]
-  )
-
-  const availableProviderNames = useMemo(
-    () => new Set((providerAvailability?.available ?? []).map(provider => provider.toLowerCase())),
-    [providerAvailability?.available]
-  )
-
-  const availableLanguageModels = useMemo(() => {
-    if (!providerAvailability) {
-      return languageModels
-    }
-
-    return languageModels.filter((model) =>
-      availableProviderNames.has(model.provider.replaceAll('_', '-').toLowerCase())
-    )
-  }, [availableProviderNames, languageModels, providerAvailability])
-
-  const preferredSummaryModelId = useMemo(() => {
-    const preferredIds = [
-      modelDefaults?.default_transformation_model,
-      modelDefaults?.default_chat_model,
-    ].filter((value): value is string => Boolean(value))
-
-    for (const preferredId of preferredIds) {
-      if (availableLanguageModels.some((model) => model.id === preferredId)) {
-        return preferredId
-      }
-    }
-
-    return availableLanguageModels[0]?.id
-  }, [
-    availableLanguageModels,
-    modelDefaults?.default_chat_model,
-    modelDefaults?.default_transformation_model,
-  ])
+  const { batchProcessedCount, batchProgressPercent, isBatchProgressComplete } =
+    useBatchProgressReset(batchProgress, setBatchProgress)
 
   const missingSummarySourceIds = useMemo(
     () => (summaries ?? []).filter((item) => !item.summary).map((item) => item.source_id),
     [summaries]
   )
-
-  useEffect(() => {
-    if (batchProgressResetTimeoutRef.current) {
-      window.clearTimeout(batchProgressResetTimeoutRef.current)
-      batchProgressResetTimeoutRef.current = null
-    }
-
-    const isComplete = Boolean(
-      batchProgress && batchProgress.completed + batchProgress.failed >= batchProgress.total
-    )
-
-    if (!batchProgress || !isComplete) {
-      return
-    }
-
-    batchProgressResetTimeoutRef.current = window.setTimeout(() => {
-      setBatchProgress(null)
-      batchProgressResetTimeoutRef.current = null
-    }, 4000)
-
-    return () => {
-      if (batchProgressResetTimeoutRef.current) {
-        window.clearTimeout(batchProgressResetTimeoutRef.current)
-        batchProgressResetTimeoutRef.current = null
-      }
-    }
-  }, [batchProgress])
-
-  const parseValidDate = useCallback((value?: string | null) => {
-    if (!value) {
-      return null
-    }
-
-    const date = new Date(value)
-    return Number.isNaN(date.getTime()) ? null : date
-  }, [])
-
-  const formatRelativeDate = useCallback((value?: string | null) => {
-    const date = parseValidDate(value)
-    if (!date) {
-      return t.common.unknown
-    }
-
-    return formatDistanceToNow(date, {
-      addSuffix: true,
-      locale: getDateLocale(language),
-    })
-  }, [language, parseValidDate, t.common.unknown])
 
   const missingSummaryCount = missingSummarySourceIds.length
   const staleSummaryCount = useMemo(
@@ -179,9 +86,7 @@ export function SummariesColumn({
       (summaries ?? []).filter((item) => {
         const summaryUpdated = parseValidDate(item.summary?.updated)
         const sourceUpdated = parseValidDate(item.source_updated)
-        if (!summaryUpdated || !sourceUpdated) {
-          return false
-        }
+        if (!summaryUpdated || !sourceUpdated) return false
         return sourceUpdated.getTime() - summaryUpdated.getTime() > 30 * 1000
       }).length,
     [summaries, parseValidDate]
@@ -192,61 +97,7 @@ export function SummariesColumn({
   )
   const processingSummaryCount = generatingSourceIds.size + refreshingSummaryIds.size
   const failedSummaryCount = failedSummarySourceIds.size
-  const batchProcessedCount = (batchProgress?.completed ?? 0) + (batchProgress?.failed ?? 0)
   const batchPendingCount = batchProgress?.pendingSourceIds.size ?? 0
-  const batchProgressPercent = batchProgress?.total
-    ? Math.round((batchProcessedCount / batchProgress.total) * 100)
-    : 0
-  const isBatchProgressComplete = Boolean(
-    batchProgress && batchProcessedCount >= batchProgress.total
-  )
-
-  const resolveSummaryModelId = useCallback(() => {
-    if (preferredSummaryModelId) {
-      return preferredSummaryModelId
-    }
-
-    toast.error(t.apiErrors.pleaseConfigureModels)
-    return null
-  }, [preferredSummaryModelId, t.apiErrors.pleaseConfigureModels])
-
-  const getSummaryErrorMessage = useCallback((error: unknown) => {
-    if (isAxiosError(error)) {
-      const detail =
-        typeof error.response?.data === 'object' &&
-        error.response?.data &&
-        'detail' in error.response.data
-          ? String(error.response.data.detail)
-          : null
-      return detail || error.message || t.common.error
-    }
-
-    if (error instanceof Error) {
-      return error.message
-    }
-
-    return t.common.error
-  }, [t.common.error])
-
-  const validateSummaryModel = useCallback(async (modelId: string) => {
-    if (validatedModelIdsRef.current.has(modelId)) {
-      return true
-    }
-
-    try {
-      const result = await modelsApi.testModel(modelId)
-      if (result.success) {
-        validatedModelIdsRef.current.add(modelId)
-        return true
-      }
-
-      toast.error(result.message || t.apiErrors.pleaseConfigureModels)
-      return false
-    } catch (error) {
-      toast.error(getSummaryErrorMessage(error))
-      return false
-    }
-  }, [getSummaryErrorMessage, t.apiErrors.pleaseConfigureModels])
 
   const invalidateSummaryData = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -277,10 +128,7 @@ export function SummariesColumn({
 
   const clearSourceGenerating = useCallback((sourceId: string) => {
     setGeneratingSourceIds((previous) => {
-      if (!previous.has(sourceId)) {
-        return previous
-      }
-
+      if (!previous.has(sourceId)) return previous
       const next = new Set(previous)
       next.delete(sourceId)
       return next
@@ -297,10 +145,7 @@ export function SummariesColumn({
 
   const clearSummaryRefreshing = useCallback((summaryId: string) => {
     setRefreshingSummaryIds((previous) => {
-      if (!previous.has(summaryId)) {
-        return previous
-      }
-
+      if (!previous.has(summaryId)) return previous
       const next = new Set(previous)
       next.delete(summaryId)
       return next
@@ -309,17 +154,13 @@ export function SummariesColumn({
 
   const clearSummaryFailure = useCallback((sourceId: string) => {
     setFailedSummarySourceIds((previous) => {
-      if (!previous.has(sourceId)) {
-        return previous
-      }
+      if (!previous.has(sourceId)) return previous
       const next = new Set(previous)
       next.delete(sourceId)
       return next
     })
     setSummaryErrorsBySourceId((previous) => {
-      if (!(sourceId in previous)) {
-        return previous
-      }
+      if (!(sourceId in previous)) return previous
       const next = { ...previous }
       delete next[sourceId]
       return next
@@ -335,18 +176,11 @@ export function SummariesColumn({
     setSummaryErrorsBySourceId((previous) => ({ ...previous, [sourceId]: message }))
   }, [])
 
-  const updateBatchProgress = useCallback((
-    sourceId: string,
-    status: 'completed' | 'failed'
-  ) => {
+  const updateBatchProgress = useCallback((sourceId: string, status: 'completed' | 'failed') => {
     setBatchProgress((previous) => {
-      if (!previous || !previous.pendingSourceIds.has(sourceId)) {
-        return previous
-      }
-
+      if (!previous || !previous.pendingSourceIds.has(sourceId)) return previous
       const nextPendingSourceIds = new Set(previous.pendingSourceIds)
       nextPendingSourceIds.delete(sourceId)
-
       return {
         ...previous,
         completed: previous.completed + (status === 'completed' ? 1 : 0),
@@ -369,9 +203,7 @@ export function SummariesColumn({
       if (!commandId) {
         invalidateSummaryData()
         window.setTimeout(invalidateSummaryData, 1500)
-        if (sourceId) {
-          clearSummaryFailure(sourceId)
-        }
+        if (sourceId) clearSummaryFailure(sourceId)
         return
       }
 
@@ -396,12 +228,8 @@ export function SummariesColumn({
       invalidateSummaryData()
       window.setTimeout(invalidateSummaryData, 1500)
     } finally {
-      if (sourceId) {
-        clearSourceGenerating(sourceId)
-      }
-      if (summaryId) {
-        clearSummaryRefreshing(summaryId)
-      }
+      if (sourceId) clearSourceGenerating(sourceId)
+      if (summaryId) clearSummaryRefreshing(summaryId)
     }
   }, [
     clearSourceGenerating,
@@ -420,7 +248,6 @@ export function SummariesColumn({
   ) => {
     clearSummaryFailure(sourceId)
     markSourceGenerating(sourceId)
-
     try {
       const response = await summariesApi.create(sourceId, modelId)
       if (options?.showToast ?? true) {
@@ -432,55 +259,27 @@ export function SummariesColumn({
       clearSourceGenerating(sourceId)
       throw error
     }
-  }, [
-    clearSourceGenerating,
-    clearSummaryFailure,
-    markSourceGenerating,
-    t.sources.insightGenerationStarted,
-    trackSummaryCommand,
-  ])
+  }, [clearSourceGenerating, clearSummaryFailure, markSourceGenerating, t.sources.insightGenerationStarted, trackSummaryCommand])
 
   const handleGenerateSummary = useCallback(async (sourceId: string) => {
-    if (generatingSourceIds.has(sourceId)) {
-      return
-    }
-
-    const modelId = resolveSummaryModelId()
-    if (!modelId) {
-      return
-    }
-
+    if (generatingSourceIds.has(sourceId)) return
+    const modelId = resolveModelId()
+    if (!modelId) return
     try {
-      const isModelValid = await validateSummaryModel(modelId)
-      if (!isModelValid) {
-        return
-      }
-
+      const isModelValid = await validateModel(modelId)
+      if (!isModelValid) return
       await queueSummaryGeneration(sourceId, modelId)
     } catch (error) {
-      markSummaryFailure(sourceId, getSummaryErrorMessage(error))
-      toast.error(getSummaryErrorMessage(error))
+      markSummaryFailure(sourceId, getErrorMessage(error))
+      toast.error(getErrorMessage(error))
     }
-  }, [
-    generatingSourceIds,
-    getSummaryErrorMessage,
-    markSummaryFailure,
-    queueSummaryGeneration,
-    resolveSummaryModelId,
-    validateSummaryModel,
-  ])
+  }, [generatingSourceIds, getErrorMessage, markSummaryFailure, queueSummaryGeneration, resolveModelId, validateModel])
 
   const handleGenerateMissingSummaries = useCallback(async () => {
     const sourceIds = missingSummarySourceIds.filter((sourceId) => !generatingSourceIds.has(sourceId))
-    if (sourceIds.length === 0) {
-      return
-    }
-
-    const modelId = resolveSummaryModelId()
-    if (!modelId) {
-      return
-    }
-
+    if (sourceIds.length === 0) return
+    const modelId = resolveModelId()
+    if (!modelId) return
     try {
       setIsBatchGenerating(true)
       setBatchProgress({
@@ -489,71 +288,45 @@ export function SummariesColumn({
         failed: 0,
         pendingSourceIds: new Set(sourceIds),
       })
-      const isModelValid = await validateSummaryModel(modelId)
+      const isModelValid = await validateModel(modelId)
       if (!isModelValid) {
         setBatchProgress(null)
         return
       }
-
       const results = await Promise.allSettled(
         sourceIds.map((sourceId) => queueSummaryGeneration(sourceId, modelId, { showToast: false }))
       )
-
       const queuedCount = results.filter(
         (result): result is PromiseFulfilledResult<boolean> => result.status === 'fulfilled' && result.value
       ).length
-
-      if (queuedCount > 0) {
-        toast.success(t.sources.insightGenerationStarted)
-      }
-
+      if (queuedCount > 0) toast.success(t.sources.insightGenerationStarted)
       const firstRejectedResult = results.find(
         (result): result is PromiseRejectedResult => result.status === 'rejected'
       )
-
       if (firstRejectedResult) {
         results.forEach((result, index) => {
           if (result.status === 'rejected') {
             const sourceId = sourceIds[index]
             if (sourceId) {
               updateBatchProgress(sourceId, 'failed')
-              markSummaryFailure(sourceId, getSummaryErrorMessage(result.reason))
+              markSummaryFailure(sourceId, getErrorMessage(result.reason))
             }
           }
         })
-        toast.error(getSummaryErrorMessage(firstRejectedResult.reason))
+        toast.error(getErrorMessage(firstRejectedResult.reason))
       }
     } finally {
       setIsBatchGenerating(false)
     }
-  }, [
-    generatingSourceIds,
-    getSummaryErrorMessage,
-    missingSummarySourceIds,
-    queueSummaryGeneration,
-    resolveSummaryModelId,
-    t.sources.insightGenerationStarted,
-    updateBatchProgress,
-    validateSummaryModel,
-    markSummaryFailure,
-  ])
+  }, [generatingSourceIds, getErrorMessage, missingSummarySourceIds, queueSummaryGeneration, resolveModelId, t.sources.insightGenerationStarted, updateBatchProgress, validateModel, markSummaryFailure])
 
   const handleRefreshSummary = useCallback(async (summaryId: string, sourceId: string) => {
-    if (refreshingSummaryIds.has(summaryId)) {
-      return
-    }
-
-    const modelId = resolveSummaryModelId()
-    if (!modelId) {
-      return
-    }
-
+    if (refreshingSummaryIds.has(summaryId)) return
+    const modelId = resolveModelId()
+    if (!modelId) return
     try {
-      const isModelValid = await validateSummaryModel(modelId)
-      if (!isModelValid) {
-        return
-      }
-
+      const isModelValid = await validateModel(modelId)
+      if (!isModelValid) return
       clearSummaryFailure(sourceId)
       markSummaryRefreshing(summaryId)
       const response = await insightsApi.refresh(summaryId, modelId)
@@ -561,27 +334,13 @@ export function SummariesColumn({
       void trackSummaryCommand({ commandId: response.command_id, summaryId, sourceId })
     } catch (error) {
       clearSummaryRefreshing(summaryId)
-      markSummaryFailure(sourceId, getSummaryErrorMessage(error))
-      toast.error(getSummaryErrorMessage(error))
+      markSummaryFailure(sourceId, getErrorMessage(error))
+      toast.error(getErrorMessage(error))
     }
-  }, [
-    clearSummaryFailure,
-    clearSummaryRefreshing,
-    getSummaryErrorMessage,
-    markSummaryFailure,
-    markSummaryRefreshing,
-    refreshingSummaryIds,
-    resolveSummaryModelId,
-    t.sources.insightRefreshStarted,
-    trackSummaryCommand,
-    validateSummaryModel,
-  ])
+  }, [clearSummaryFailure, clearSummaryRefreshing, getErrorMessage, markSummaryFailure, markSummaryRefreshing, refreshingSummaryIds, resolveModelId, t.sources.insightRefreshStarted, trackSummaryCommand, validateModel])
 
   const previewContent = useCallback((content?: string | null) => {
-    if (!content) {
-      return ''
-    }
-
+    if (!content) return ''
     return content
       .replace(/^#{1,6}\s+/gm, '')
       .replace(/\*\*(.*?)\*\*/g, '$1')
@@ -631,9 +390,7 @@ export function SummariesColumn({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => {
-                      void handleGenerateMissingSummaries()
-                    }}
+                    onClick={() => void handleGenerateMissingSummaries()}
                     disabled={isBatchGenerating || Boolean(batchProgress)}
                   >
                     {isBatchGenerating ? (
@@ -686,7 +443,7 @@ export function SummariesColumn({
                 {summaries.map((item) => {
                   const summary = item.summary
                   const isGenerating = generatingSourceIds.has(item.source_id)
-                  const isRefreshing = summary?.id ? refreshingSummaryIds.has(summary.id) : false
+                  const isRefreshingCard = summary?.id ? refreshingSummaryIds.has(summary.id) : false
                   const hasSummary = Boolean(summary)
                   const isStale = Boolean(summary && parseValidDate(summary.updated) && parseValidDate(item.source_updated) && parseValidDate(item.source_updated)!.getTime() - parseValidDate(summary.updated)!.getTime() > 30 * 1000)
                   const summaryError = summaryErrorsBySourceId[item.source_id]
@@ -701,9 +458,7 @@ export function SummariesColumn({
                         <div
                           className={hasSummary ? 'min-w-0 flex-1 cursor-pointer' : 'min-w-0 flex-1'}
                           onClick={() => {
-                            if (!summary) {
-                              return
-                            }
+                            if (!summary) return
                             setSelectedSummary({
                               id: summary.id,
                               insight_type: summary.prompt_title || summary.insight_type,
@@ -720,7 +475,7 @@ export function SummariesColumn({
                             {hasSummary && (
                               <Badge variant="secondary">{t.podcasts.summary}</Badge>
                             )}
-                            {isGenerating || isRefreshing ? (
+                            {isGenerating || isRefreshingCard ? (
                               <Badge variant="outline" className="border-blue-200 text-blue-700">
                                 {language.startsWith('zh') ? '处理中' : 'Processing'}
                               </Badge>
@@ -765,18 +520,16 @@ export function SummariesColumn({
                             variant="outline"
                             onClick={(event) => {
                               event.stopPropagation()
-                              if (summary?.id) {
-                                void handleRefreshSummary(summary.id, item.source_id)
-                              }
+                              if (summary?.id) void handleRefreshSummary(summary.id, item.source_id)
                             }}
-                            disabled={isRefreshing || isGenerating}
+                            disabled={isRefreshingCard || isGenerating}
                           >
-                            {isRefreshing ? (
+                            {isRefreshingCard ? (
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             ) : (
                               <RefreshCw className="mr-2 h-4 w-4" />
                             )}
-                            {isRefreshing ? t.sources.refreshingInsight : t.common.refresh}
+                            {isRefreshingCard ? t.sources.refreshingInsight : t.common.refresh}
                           </Button>
                         ) : (
                           <Button
@@ -795,7 +548,6 @@ export function SummariesColumn({
                             {isGenerating ? t.common.processing : `${t.common.create} ${t.podcasts.summary}`}
                           </Button>
                         )}
-
                         <Button
                           size="sm"
                           variant="ghost"
@@ -820,9 +572,7 @@ export function SummariesColumn({
       <SourceInsightDialog
         open={Boolean(selectedSummary)}
         onOpenChange={(open) => {
-          if (!open) {
-            setSelectedSummary(null)
-          }
+          if (!open) setSelectedSummary(null)
         }}
         insight={selectedSummary ?? undefined}
       />

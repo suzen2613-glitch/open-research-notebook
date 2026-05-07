@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { Archive, ArchiveRestore, Loader2, StickyNote, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, GitBranch, Loader2, StickyNote, Trash2 } from 'lucide-react'
 
 import { NotebookResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,8 @@ import { InlineEdit } from '@/components/common/InlineEdit'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 import { getNotebookThemeClasses, getNotebookTypeLabel } from '@/lib/notebook-appearance'
+import { KnowledgeGraphDialog } from './KnowledgeGraphDialog'
+import type { SourceWikiCardSlotResponse } from '@/lib/api/wiki-cards'
 
 export interface NotebookOverview {
   sourceTotal: number
@@ -34,17 +36,28 @@ interface NotebookHeaderProps {
   notebook: NotebookResponse
   overview?: NotebookOverview
   isRefreshing?: boolean
+  wikiCardSlots?: SourceWikiCardSlotResponse[]
 }
 
-export function NotebookHeader({ notebook, overview, isRefreshing = false }: NotebookHeaderProps) {
+export function NotebookHeader({
+  notebook,
+  overview,
+  isRefreshing = false,
+  wikiCardSlots = [],
+}: NotebookHeaderProps) {
   const { t, language } = useTranslation()
   const dfLocale = getDateLocale(language)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showGraphDialog, setShowGraphDialog] = useState(false)
 
   const updateNotebook = useUpdateNotebook()
   const isZh = language?.startsWith('zh')
   const isAcademic = notebook.notebook_type === 'academic'
   const theme = getNotebookThemeClasses(notebook.theme_color)
+  const completedWikiCardCount = useMemo(
+    () => wikiCardSlots.filter((slot) => slot.status === 'completed' && slot.wiki_card).length,
+    [wikiCardSlots]
+  )
 
   const labels = useMemo(() => ({
     sources: isZh ? '来源' : 'Sources',
@@ -60,6 +73,7 @@ export function NotebookHeader({ notebook, overview, isRefreshing = false }: Not
     wikiFailed: isZh ? 'Wiki 失败' : 'Wiki failed',
     wikiMissing: isZh ? '待建 Wiki' : 'Wiki missing',
     wikiStale: isZh ? 'Wiki 待刷新' : 'Wiki stale',
+    graph: isZh ? '关系图' : 'Knowledge Graph',
   }), [isZh])
 
   const handleUpdateName = async (name: string) => {
@@ -115,6 +129,22 @@ export function NotebookHeader({ notebook, overview, isRefreshing = false }: Not
               )}
             </div>
             <div className="flex flex-wrap gap-2">
+              {isAcademic && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowGraphDialog(true)}
+                  className="gap-2"
+                >
+                  <GitBranch className="h-4 w-4" />
+                  {labels.graph}
+                  {completedWikiCardCount > 0 && (
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">
+                      {completedWikiCardCount}
+                    </span>
+                  )}
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleArchiveToggle}>
                 {notebook.archived ? (
                   <>
@@ -205,6 +235,13 @@ export function NotebookHeader({ notebook, overview, isRefreshing = false }: Not
           </div>
         </div>
       </div>
+
+      <KnowledgeGraphDialog
+        open={showGraphDialog}
+        onOpenChange={setShowGraphDialog}
+        notebookName={notebook.name}
+        wikiCardSlots={wikiCardSlots}
+      />
 
       <NotebookDeleteDialog
         open={showDeleteDialog}

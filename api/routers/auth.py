@@ -55,14 +55,15 @@ async def get_auth_status():
     Returns whether a password is required to access the API.
     Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
     """
-    auth_enabled = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
+    password_configured = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
 
     return {
-        "auth_enabled": auth_enabled,
-        "auth_cookie_name": get_auth_cookie_name() if auth_enabled else None,
+        "auth_enabled": True,
+        "auth_configured": password_configured,
+        "auth_cookie_name": get_auth_cookie_name() if password_configured else None,
         "message": "Authentication is required"
-        if auth_enabled
-        else "Authentication is disabled",
+        if password_configured
+        else "OPEN_NOTEBOOK_PASSWORD is not configured",
     }
 
 
@@ -70,7 +71,10 @@ async def get_auth_status():
 async def login(payload: PasswordLoginRequest, request: Request):
     password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
     if not password:
-        return {"authenticated": True, "auth_enabled": False}
+        raise HTTPException(
+            status_code=403,
+            detail="OPEN_NOTEBOOK_PASSWORD is not configured.",
+        )
 
     if payload.password != password:
         raise HTTPException(status_code=401, detail="Invalid password")

@@ -1,10 +1,9 @@
 services:
   surrealdb:
     image: surrealdb/surrealdb:v2
-    command: start --log info --user root --pass root rocksdb:/mydata/mydatabase.db
+    command: start --log info --user root --pass ${SURREAL_PASSWORD:?Set SURREAL_PASSWORD in .env} rocksdb:/mydata/mydatabase.db
     user: root  # Required for bind mounts on Linux
-    ports:
-      - "8000:8000"
+    # Port 8000 is NOT exposed to the host — only accessible via internal network
     volumes:
       - ./surreal_data:/mydata
     environment:
@@ -18,14 +17,14 @@ services:
       - "8502:8502"  # Web UI
       - "5055:5055"  # REST API
     environment:
-      # REQUIRED: Change this to your own secret string
-      # This encrypts your API keys in the database
-      - OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
+      # REQUIRED: Set these in your .env file before running
+      - OPEN_NOTEBOOK_ENCRYPTION_KEY=${OPEN_NOTEBOOK_ENCRYPTION_KEY:?Set OPEN_NOTEBOOK_ENCRYPTION_KEY in .env}
+      - OPEN_NOTEBOOK_PASSWORD=${OPEN_NOTEBOOK_PASSWORD:?Set OPEN_NOTEBOOK_PASSWORD in .env}
 
       # Database connection (default values - no need to change)
       - SURREAL_URL=ws://surrealdb:8000/rpc
       - SURREAL_USER=root
-      - SURREAL_PASSWORD=root
+      - SURREAL_PASSWORD=${SURREAL_PASSWORD:?Set SURREAL_PASSWORD in .env}
       - SURREAL_NAMESPACE=open_notebook
       - SURREAL_DATABASE=open_notebook
     volumes:

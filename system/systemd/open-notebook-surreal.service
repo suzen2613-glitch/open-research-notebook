@@ -6,7 +6,10 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/env bash __PROJECT_DIR__/system/open-notebook-systemd-run.sh surreal
-Restart=always
+SyslogIdentifier=open-notebook-surreal
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
 RestartSec=3
 KillMode=control-group
 TimeoutStopSec=20

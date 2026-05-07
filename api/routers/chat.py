@@ -7,6 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.routers._common import ensure_session_id
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from open_notebook.exceptions import (
@@ -130,7 +131,7 @@ async def get_sessions(notebook_id: str = Query(..., description="Notebook ID"))
     except Exception as e:
         logger.error(f"Error fetching chat sessions: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching chat sessions: {str(e)}"
+            status_code=500, detail="Failed to fetch chat sessions"
         )
 
 
@@ -168,7 +169,7 @@ async def create_session(request: CreateSessionRequest):
     except Exception as e:
         logger.error(f"Error creating chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error creating chat session: {str(e)}"
+            status_code=500, detail="Failed to create chat session"
         )
 
 
@@ -180,11 +181,7 @@ async def get_session(session_id: str):
     try:
         # Get session
         # Ensure session_id has proper table prefix
-        full_session_id = (
-            session_id
-            if session_id.startswith("chat_session:")
-            else f"chat_session:{session_id}"
-        )
+        full_session_id = ensure_session_id(session_id)
         session = await ChatSession.get(full_session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -211,11 +208,7 @@ async def get_session(session_id: str):
 
         # Find notebook_id (we need to query the relationship)
         # Ensure session_id has proper table prefix
-        full_session_id = (
-            session_id
-            if session_id.startswith("chat_session:")
-            else f"chat_session:{session_id}"
-        )
+        full_session_id = ensure_session_id(session_id)
 
         notebook_query = await repo_query(
             "SELECT out FROM refers_to WHERE in = $session_id",
@@ -244,7 +237,7 @@ async def get_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     except Exception as e:
         logger.error(f"Error fetching session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching session: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch session")
 
 
 @router.put("/chat/sessions/{session_id}", response_model=ChatSessionResponse)
@@ -252,11 +245,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
     """Update session title."""
     try:
         # Ensure session_id has proper table prefix
-        full_session_id = (
-            session_id
-            if session_id.startswith("chat_session:")
-            else f"chat_session:{session_id}"
-        )
+        full_session_id = ensure_session_id(session_id)
         session = await ChatSession.get(full_session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -273,11 +262,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
 
         # Find notebook_id
         # Ensure session_id has proper table prefix
-        full_session_id = (
-            session_id
-            if session_id.startswith("chat_session:")
-            else f"chat_session:{session_id}"
-        )
+        full_session_id = ensure_session_id(session_id)
         notebook_query = await repo_query(
             "SELECT out FROM refers_to WHERE in = $session_id",
             {"session_id": ensure_record_id(full_session_id)},
@@ -300,7 +285,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     except Exception as e:
         logger.error(f"Error updating session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating session: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update session")
 
 
 @router.delete("/chat/sessions/{session_id}", response_model=SuccessResponse)
@@ -308,11 +293,7 @@ async def delete_session(session_id: str):
     """Delete a chat session."""
     try:
         # Ensure session_id has proper table prefix
-        full_session_id = (
-            session_id
-            if session_id.startswith("chat_session:")
-            else f"chat_session:{session_id}"
-        )
+        full_session_id = ensure_session_id(session_id)
         session = await ChatSession.get(full_session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -324,7 +305,7 @@ async def delete_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete session")
 
 
 @router.post("/chat/execute", response_model=ExecuteChatResponse)
@@ -333,11 +314,7 @@ async def execute_chat(request: ExecuteChatRequest):
     try:
         # Verify session exists
         # Ensure session_id has proper table prefix
-        full_session_id = (
-            request.session_id
-            if request.session_id.startswith("chat_session:")
-            else f"chat_session:{request.session_id}"
-        )
+        full_session_id = ensure_session_id(request.session_id)
         session = await ChatSession.get(full_session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -405,7 +382,7 @@ async def execute_chat(request: ExecuteChatRequest):
             f"  Model override: {request.model_override}\n"
             f"  Traceback:\n{traceback.format_exc()}"
         )
-        raise HTTPException(status_code=500, detail=f"Error executing chat: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to execute chat")
 
 
 @router.post("/chat/context", response_model=BuildContextResponse)
@@ -513,4 +490,4 @@ async def build_context(request: BuildContextRequest):
         raise
     except Exception as e:
         logger.error(f"Error building context: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error building context: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to build context")

@@ -9,6 +9,7 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.routers._common import ensure_session_id, ensure_source_id
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Source
 from open_notebook.exceptions import (
@@ -98,7 +99,7 @@ async def create_source_chat_session(
     try:
         # Verify source exists
         full_source_id = (
-            source_id if source_id.startswith("source:") else f"source:{source_id}"
+            ensure_source_id(source_id)
         )
         source = await Source.get(full_source_id)
         if not source:
@@ -128,7 +129,7 @@ async def create_source_chat_session(
     except Exception as e:
         logger.error(f"Error creating source chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error creating source chat session: {str(e)}"
+            status_code=500, detail="Failed to create source chat session"
         )
 
 
@@ -140,7 +141,7 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
     try:
         # Verify source exists
         full_source_id = (
-            source_id if source_id.startswith("source:") else f"source:{source_id}"
+            ensure_source_id(source_id)
         )
         source = await Source.get(full_source_id)
         if not source:
@@ -158,7 +159,11 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
             if session_id_raw:
                 session_id = str(session_id_raw)
 
-                session_result = await repo_query(f"SELECT * FROM {session_id_raw}")
+                validated_id = ensure_record_id(session_id_raw)
+                session_result = await repo_query(
+                    "SELECT * FROM $session_id",
+                    {"session_id": validated_id},
+                )
                 if session_result and len(session_result) > 0:
                     session_data = session_result[0]
 
@@ -187,7 +192,7 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
     except Exception as e:
         logger.error(f"Error fetching source chat sessions: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching source chat sessions: {str(e)}"
+            status_code=500, detail="Failed to fetch source chat sessions"
         )
 
 
@@ -203,18 +208,14 @@ async def get_source_chat_session(
     try:
         # Verify source exists
         full_source_id = (
-            source_id if source_id.startswith("source:") else f"source:{source_id}"
+            ensure_source_id(source_id)
         )
         source = await Source.get(full_source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
 
         # Get session
-        full_session_id = (
-            session_id
-            if session_id.startswith("chat_session:")
-            else f"chat_session:{session_id}"
-        )
+        full_session_id = ensure_session_id(session_id)
         session = await ChatSession.get(full_session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -285,7 +286,7 @@ async def get_source_chat_session(
     except Exception as e:
         logger.error(f"Error fetching source chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error fetching source chat session: {str(e)}"
+            status_code=500, detail="Failed to fetch source chat session"
         )
 
 
@@ -302,18 +303,14 @@ async def update_source_chat_session(
     try:
         # Verify source exists
         full_source_id = (
-            source_id if source_id.startswith("source:") else f"source:{source_id}"
+            ensure_source_id(source_id)
         )
         source = await Source.get(full_source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
 
         # Get session
-        full_session_id = (
-            session_id
-            if session_id.startswith("chat_session:")
-            else f"chat_session:{session_id}"
-        )
+        full_session_id = ensure_session_id(session_id)
         session = await ChatSession.get(full_session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -357,7 +354,7 @@ async def update_source_chat_session(
     except Exception as e:
         logger.error(f"Error updating source chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error updating source chat session: {str(e)}"
+            status_code=500, detail="Failed to update source chat session"
         )
 
 
@@ -372,18 +369,14 @@ async def delete_source_chat_session(
     try:
         # Verify source exists
         full_source_id = (
-            source_id if source_id.startswith("source:") else f"source:{source_id}"
+            ensure_source_id(source_id)
         )
         source = await Source.get(full_source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
 
         # Get session
-        full_session_id = (
-            session_id
-            if session_id.startswith("chat_session:")
-            else f"chat_session:{session_id}"
-        )
+        full_session_id = ensure_session_id(session_id)
         session = await ChatSession.get(full_session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -412,7 +405,7 @@ async def delete_source_chat_session(
     except Exception as e:
         logger.error(f"Error deleting source chat session: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error deleting source chat session: {str(e)}"
+            status_code=500, detail="Failed to delete source chat session"
         )
 
 
@@ -492,18 +485,14 @@ async def send_message_to_source_chat(
     try:
         # Verify source exists
         full_source_id = (
-            source_id if source_id.startswith("source:") else f"source:{source_id}"
+            ensure_source_id(source_id)
         )
         source = await Source.get(full_source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
 
         # Verify session exists and is related to source
-        full_session_id = (
-            session_id
-            if session_id.startswith("chat_session:")
-            else f"chat_session:{session_id}"
-        )
+        full_session_id = ensure_session_id(session_id)
         session = await ChatSession.get(full_session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -553,4 +542,4 @@ async def send_message_to_source_chat(
         raise
     except Exception as e:
         logger.error(f"Error sending message to source chat: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error sending message: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to send message")

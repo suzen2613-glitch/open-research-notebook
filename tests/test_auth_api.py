@@ -31,6 +31,29 @@ def auth_client(monkeypatch):
     return TestClient(app)
 
 
+@pytest.fixture
+def no_password_auth_client(monkeypatch):
+    monkeypatch.delenv("OPEN_NOTEBOOK_PASSWORD", raising=False)
+    monkeypatch.delenv("OPEN_NOTEBOOK_PASSWORD_FILE", raising=False)
+
+    app = FastAPI()
+    app.add_middleware(
+        PasswordAuthMiddleware,
+        excluded_paths=[
+            "/api/auth/status",
+            "/api/auth/login",
+            "/api/auth/logout",
+        ],
+    )
+    app.include_router(auth_router.router, prefix="/api")
+
+    @app.get("/api/private")
+    async def private():
+        return JSONResponse({"ok": True})
+
+    return TestClient(app)
+
+
 def test_login_sets_auth_cookie(auth_client):
     response = auth_client.post("/api/auth/login", json={"password": "test-secret"})
 
@@ -71,7 +94,7 @@ def test_protected_endpoint_rejects_tampered_auth_cookie(auth_client):
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid password"
+    assert response.json()["detail"] == "Missing authorization header or auth cookie"
 
 
 def test_protected_endpoint_rejects_missing_auth(auth_client):
@@ -79,3 +102,23 @@ def test_protected_endpoint_rejects_missing_auth(auth_client):
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Missing authorization header or auth cookie"
+
+
+def test_auth_status_reports_required_when_password_is_missing(no_password_auth_client):
+    response = no_password_auth_client.get("/api/auth/status")
+
+    assert response.status_code == 200
+    assert response.json()["auth_enabled"] is True
+    assert response.json()["auth_configured"] is False
+
+
+def test_login_rejects_when_password_is_missing(no_password_auth_client):
+    response = no_password_auth_client.post("/api/auth/login", json={"password": "x"})
+
+    assert response.status_code == 403
+
+
+def test_protected_endpoint_blocks_when_password_is_missing(no_password_auth_client):
+    response = no_password_auth_client.get("/api/private")
+
+    assert response.status_code == 403

@@ -181,8 +181,10 @@ async def lifespan(app: FastAPI):
     if get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"):
         logger.info("Password authentication is enabled.")
     else:
-        logger.warning(
-            "OPEN_NOTEBOOK_PASSWORD not set. API authentication is disabled."
+        logger.error(
+            "OPEN_NOTEBOOK_PASSWORD not set. "
+            "All API endpoints except /health and /docs are blocked. "
+            "Set OPEN_NOTEBOOK_PASSWORD in your environment or .env file."
         )
     logger.info(
         "Allowed CORS origins: "

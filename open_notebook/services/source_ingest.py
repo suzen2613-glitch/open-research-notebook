@@ -9,6 +9,7 @@ from surreal_commands import execute_command_sync, submit_command
 
 from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.notebook import Asset, Notebook, Source
+from open_notebook.exceptions import InvalidInputError
 from open_notebook.domain.transformation import Transformation
 
 
@@ -34,6 +35,8 @@ async def validate_notebook_ids(notebook_ids: list[str]) -> None:
         notebook = await Notebook.get(notebook_id)
         if not notebook:
             raise ValueError(f"Notebook {notebook_id} not found")
+        if notebook.notebook_type == "general":
+            raise InvalidInputError("General notebooks don't support sources")
 
 
 async def resolve_transformation_ids(transformation_ids: list[str]) -> list[str]:

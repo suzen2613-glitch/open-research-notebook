@@ -20,7 +20,29 @@ env:
   DOCKERHUB_IMAGE: lfnovo/open_notebook
 
 jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run backend tests
+        run: uv run pytest tests/ -v
+
   extract-version:
+    needs: test
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}

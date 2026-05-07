@@ -127,6 +127,13 @@ def _sanitize_wiki_card_evidence_snippets(value: Any) -> List[Dict[str, Any]]:
         if char_end is not None:
             normalized_entry["char_end"] = char_end
 
+        score_raw = raw_entry.get("score")
+        if isinstance(score_raw, (int, float)):
+            normalized_entry["score"] = float(score_raw)
+        match_count_raw = raw_entry.get("match_count")
+        if isinstance(match_count_raw, (int, float)):
+            normalized_entry["match_count"] = int(match_count_raw)
+
         dedupe_key = (
             normalized_entry["embedding_id"],
             normalized_entry["excerpt"],

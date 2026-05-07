@@ -1,0 +1,2 @@
+DEFINE FIELD IF NOT EXISTS evidence_snippets.*.score ON TABLE source_wiki_card TYPE option<float>;
+DEFINE FIELD IF NOT EXISTS evidence_snippets.*.match_count ON TABLE source_wiki_card TYPE option<int>;

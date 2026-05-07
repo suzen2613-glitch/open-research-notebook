@@ -4,6 +4,15 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 
 export type ModalType = 'source' | 'note' | 'insight' | 'evidence'
 
+export interface ModalAnchor {
+  start: number
+  end: number
+}
+
+export interface OpenModalOptions {
+  anchor?: ModalAnchor
+}
+
 export function useModalManager() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -13,16 +22,32 @@ export function useModalManager() {
   const modalType = searchParams?.get('modal') as ModalType | null
   const modalId = searchParams?.get('id')
 
+  const rawAnchorStart = searchParams?.get('anchor_start')
+  const rawAnchorEnd = searchParams?.get('anchor_end')
+  const modalAnchor: ModalAnchor | null = (() => {
+    if (rawAnchorStart === null || rawAnchorStart === undefined) return null
+    if (rawAnchorEnd === null || rawAnchorEnd === undefined) return null
+    const start = Number(rawAnchorStart)
+    const end = Number(rawAnchorEnd)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null
+    return { start, end }
+  })()
+
   /**
    * Open a modal by updating URL params without navigation
-   * @param type - Type of modal to open (source, note, insight)
-   * @param id - ID of the content to display
    */
-  const openModal = (type: ModalType, id: string) => {
+  const openModal = (type: ModalType, id: string, options?: OpenModalOptions) => {
     const params = new URLSearchParams(searchParams?.toString() || '')
     params.set('modal', type)
     params.set('id', id)
-    // Use scroll: false to prevent page from scrolling when modal state changes
+    // Anchor lives only on the current modal session — clear whenever a
+    // different modal is opened without one.
+    params.delete('anchor_start')
+    params.delete('anchor_end')
+    if (options?.anchor) {
+      params.set('anchor_start', String(options.anchor.start))
+      params.set('anchor_end', String(options.anchor.end))
+    }
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
@@ -33,14 +58,17 @@ export function useModalManager() {
     const params = new URLSearchParams(searchParams?.toString() || '')
     params.delete('modal')
     params.delete('id')
+    params.delete('anchor_start')
+    params.delete('anchor_end')
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
   return {
     modalType,
     modalId,
+    modalAnchor,
     openModal,
     closeModal,
-    isOpen: !!modalType && !!modalId
+    isOpen: !!modalType && !!modalId,
   }
 }

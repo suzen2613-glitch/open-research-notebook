@@ -146,9 +146,14 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
         return False
 
     async def dispatch(self, request: Request, call_next):
-        # Skip authentication if no password is set
+        # When no password is set, only allow health/docs endpoints
         if not self.password:
-            return await call_next(request)
+            if self._is_excluded_path(request.url.path):
+                return await call_next(request)
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "OPEN_NOTEBOOK_PASSWORD is not configured. Set it in your environment or .env file to access this endpoint."},
+            )
 
         # Skip authentication for excluded paths
         if self._is_excluded_path(request.url.path):
@@ -168,7 +173,7 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        bearer_authenticated = credentials == self.password if credentials else False
+        bearer_authenticated = hmac.compare_digest(credentials, self.password) if credentials else False
 
         if not credentials and not cookie_authenticated:
             return JSONResponse(
@@ -206,9 +211,12 @@ def check_api_password(
     """
     password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
 
-    # No password configured - skip authentication
+    # No password configured - deny access
     if not password:
-        return True
+        raise HTTPException(
+            status_code=403,
+            detail="OPEN_NOTEBOOK_PASSWORD is not configured. Set it in your environment or .env file.",
+        )
 
     request_password = credentials.credentials if credentials else None
     cookie_authenticated = has_valid_auth_cookie(request, password)
@@ -220,7 +228,7 @@ def check_api_password(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if request_password == password or cookie_authenticated:
+    if (request_password and hmac.compare_digest(request_password, password)) or cookie_authenticated:
         return True
 
     raise HTTPException(

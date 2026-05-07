@@ -1,4 +1,10 @@
+from types import SimpleNamespace
+
+import pytest
+
+from open_notebook.exceptions import InvalidInputError
 from open_notebook.graphs.source import should_replace_source_title
+from open_notebook.services import source_ingest
 from open_notebook.services.source_ingest import (
     PROVISIONAL_SOURCE_TITLE,
     build_placeholder_asset,
@@ -55,3 +61,14 @@ def test_build_placeholder_asset_uses_url():
     assert asset is not None
     assert asset.file_path is None
     assert asset.url == "https://example.com/paper"
+
+
+@pytest.mark.asyncio
+async def test_validate_notebook_ids_rejects_general_notebooks(monkeypatch):
+    async def fake_get(notebook_id: str):
+        return SimpleNamespace(id=notebook_id, notebook_type="general")
+
+    monkeypatch.setattr(source_ingest.Notebook, "get", fake_get)
+
+    with pytest.raises(InvalidInputError, match="General notebooks don't support sources"):
+        await source_ingest.validate_notebook_ids(["notebook:general"])

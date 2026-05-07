@@ -17,6 +17,8 @@ bash system/open-notebook-service.sh bootstrap
 bash system/open-notebook-service.sh status
 bash system/open-notebook-service.sh logs api
 bash system/open-notebook-service.sh logs worker 200
+make daemon-logs
+make daemon-logs-vacuum
 ```
 
 Notes:
@@ -26,6 +28,7 @@ Notes:
 - Browser login now uses an auth cookie, so protected images can render without leaving `/api/images` publicly unauthenticated.
 - `enable` makes the stack start on user login.
 - To keep services alive after logout, also run `sudo loginctl enable-linger $USER`.
+- Logs go to the user journal (`journalctl --user`); use `make daemon-logs` to tail the core 4 services and `make daemon-logs-vacuum` to rotate/prune retained logs.
 
 ## Public Access Notes
 

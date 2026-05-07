@@ -268,7 +268,12 @@ export default function NotebookPage() {
       <div className="flex flex-col flex-1 min-h-0">
         <div className="flex-shrink-0 p-6 pb-0">
           {notebook ? (
-            <NotebookHeader notebook={notebook} overview={overview} isRefreshing={isNotebookRefreshing} />
+            <NotebookHeader
+              notebook={notebook}
+              overview={overview}
+              isRefreshing={isNotebookRefreshing}
+              wikiCardSlots={isAcademicNotebook ? wikiCardSlots : []}
+            />
           ) : (
             <div className="border-b pb-6">
               <div className="space-y-3">

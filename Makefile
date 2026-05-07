@@ -1,5 +1,5 @@
 .PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart images images-start images-stop images-restart
-.PHONY: daemon-install daemon-bootstrap daemon-start daemon-stop daemon-restart daemon-status daemon-enable daemon-disable daemon-uninstall
+.PHONY: daemon-install daemon-bootstrap daemon-start daemon-stop daemon-restart daemon-status daemon-enable daemon-disable daemon-uninstall daemon-logs daemon-logs-vacuum
 .PHONY: docker-buildx-prepare docker-buildx-clean docker-buildx-reset
 .PHONY: docker-push docker-push-latest docker-release docker-build-local tag export-docs
 
@@ -195,15 +195,23 @@ stop-all:
 
 status:
 	@echo "📊 Open Notebook Service Status:"
-	@echo "Database (SurrealDB):"
-	@docker compose ps surrealdb 2>/dev/null || echo "  ❌ Not running"
-	@echo "API Backend:"
-	@pgrep -f "run_api.py\|uvicorn api.main:app" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
-	@echo "Background Worker:"
-	@pgrep -f "surreal-commands-worker" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
-	@echo "Next.js Frontend:"
-	@pgrep -f "next dev" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
-
+	@if systemctl --user show-environment >/dev/null 2>&1 \
+		&& systemctl --user show open-notebook-api.service >/dev/null 2>&1; then \
+		for unit in open-notebook-surreal.service open-notebook-api.service open-notebook-worker.service open-notebook-frontend.service open-notebook-cloudflared.service; do \
+			state=$$(systemctl --user is-active $$unit 2>/dev/null || true); \
+			printf "  %-34s %s\n" "$$unit" "$${state:-unknown}"; \
+		done; \
+	else \
+		echo "  systemd user services not available, falling back to process checks"; \
+		echo "Database (SurrealDB):"; \
+		docker compose ps surrealdb 2>/dev/null || echo "  ❌ Not running"; \
+		echo "API Backend:"; \
+		pgrep -f "run_api.py\|uvicorn api.main:app" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"; \
+		echo "Background Worker:"; \
+		pgrep -f "surreal-commands-worker" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"; \
+		echo "Next.js Frontend:"; \
+		pgrep -f "next dev" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"; \
+	fi
 daemon-install:
 	@bash system/open-notebook-service.sh install
 
@@ -221,6 +229,18 @@ daemon-restart:
 
 daemon-status:
 	@bash system/open-notebook-service.sh status
+
+daemon-logs:
+	@journalctl --user \
+		-u open-notebook-surreal.service \
+		-u open-notebook-api.service \
+		-u open-notebook-worker.service \
+		-u open-notebook-frontend.service \
+		-n 200 -f --output=short-iso
+
+daemon-logs-vacuum:
+	@journalctl --user --rotate
+	@journalctl --user --vacuum-time=14d --vacuum-size=200M
 
 daemon-enable:
 	@bash system/open-notebook-service.sh enable

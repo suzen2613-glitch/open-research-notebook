@@ -8,7 +8,10 @@ Requires=open-notebook-frontend.service
 [Service]
 Type=simple
 ExecStart=/usr/bin/env bash __PROJECT_DIR__/system/open-notebook-systemd-run.sh cloudflared
-Restart=always
+SyslogIdentifier=open-notebook-cloudflared
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
 RestartSec=3
 KillMode=control-group
 TimeoutStopSec=20

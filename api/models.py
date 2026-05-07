@@ -509,6 +509,7 @@ class RelatedSourceResponse(BaseModel):
 
 class RelationEdgeResponse(BaseModel):
     source_id: str
+    target_source_id: Optional[str] = None
     relation_type: str
     reason: str
 
@@ -520,6 +521,8 @@ class EvidenceSnippetResponse(BaseModel):
     char_end: Optional[int] = None
     excerpt: str
     reason: str
+    score: Optional[float] = None
+    match_count: Optional[int] = None
 
 
 class SourceWikiCardResponse(BaseModel):
